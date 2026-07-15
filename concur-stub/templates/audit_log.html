@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Audit Log{% endblock %}
+{% block content %}
+
+<h1>Audit Log</h1>
+<p class="text-secondary mt-1">{{ total }} total event{% if total != 1 %}s{% endif %}</p>
+
+<div class="table-wrap mt-2">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Timestamp</th>
+        <th>Event Type</th>
+        <th>Entity</th>
+        <th>Employee</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      <tr>
+        <td class="text-secondary">{{ entry.id }}</td>
+        <td class="text-secondary"><code>{{ entry.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</code></td>
+        <td><span class="badge badge-info" style="white-space:nowrap">{{ entry.event_type }}</span></td>
+        <td><code>{{ entry.entity_type }}:{{ entry.entity_id }}</code></td>
+        <td>{% if entry.employee_id %}<code>{{ entry.employee_id }}</code>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
+        <td>{{ entry.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+  {% if page > 1 %}
+  <a href="/admin/audit-log?page={{ page - 1 }}&page_size={{ page_size }}">← Prev</a>
+  {% endif %}
+  {% for p in range(1, total_pages + 1) %}
+    {% if p == page %}
+    <span class="current">{{ p }}</span>
+    {% else %}
+    <a href="/admin/audit-log?page={{ p }}&page_size={{ page_size }}">{{ p }}</a>
+    {% endif %}
+  {% endfor %}
+  {% if page < total_pages %}
+  <a href="/admin/audit-log?page={{ page + 1 }}&page_size={{ page_size }}">Next →</a>
+  {% endif %}
+  <span class="text-secondary" style="margin-left:1rem; font-size:12px">Page {{ page }} of {{ total_pages }}</span>
+</div>
+{% endif %}
+
+{% endblock %}

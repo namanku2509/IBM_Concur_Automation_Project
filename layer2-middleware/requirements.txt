@@ -1,0 +1,25 @@
+# Layer 2 — AI Middleware
+# System dependency: poppler-utils must be installed for pdf2image
+#   macOS:  brew install poppler
+#   Linux:  apt install poppler-utils
+#
+# System dependency: ollama must be installed and running
+#   macOS:  brew install ollama  OR  download from https://ollama.com
+#   then:   ollama pull llama3.2:3b
+#   then:   ollama serve   (keep running in a terminal)
+
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+pydantic==2.10.4
+httpx==0.28.1
+# ── Local AI (no API keys needed) ──────────────────────────────────────────
+docling==2.31.0          # IBM open-source PDF extractor — runs locally
+ollama==0.4.7            # Python client for local Ollama LLM server
+# ── PDF + image processing ──────────────────────────────────────────────────
+Pillow==11.1.0
+pdf2image==1.17.0
+# ── Matching + utilities ────────────────────────────────────────────────────
+rapidfuzz==3.11.0
+python-dotenv==1.0.1
+aiofiles==24.1.0

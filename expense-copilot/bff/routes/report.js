@@ -1,0 +1,338 @@
+const express = require('express');
+const multer = require('multer');
+const { v4: uuidv4 } = require('uuid');
+const router = express.Router();
+
+const reportStore = require('../session/reportStore');
+const layer3 = require('../services/layer3Service');
+const layer2 = require('../services/layer2Service');
+
+// Accept files in memory so we can forward buffers to Layer 2
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Hardcoded for prototype — in production this comes from auth/session
+const DEFAULT_EMPLOYEE_ID = 'EMP001';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: Normalise a ReceiptResult from Layer 2 pipeline into a consistent
+// shape for the session store and the frontend.
+//
+// Layer 2 returns camelCase from Pydantic (by_alias):
+//   expenseType, transactionDate, paymentType, matchedTxnId, matchConfidence,
+//   expenseId, hotelDetail, airfareDetail, taxiDetail, mealDetail, ...
+//
+// We keep the camelCase names as-is so the frontend can consume them directly.
+// ─────────────────────────────────────────────────────────────────────────────
+function normaliseExpense(r) {
+  return {
+    filename:        r.filename,
+    status:          r.status,
+    expenseType:     r.expense_type    ?? r.expenseType,
+    vendor:          r.vendor,
+    amount:          r.amount,
+    currency:        r.currency        ?? 'INR',
+    transactionDate: r.transaction_date ?? r.transactionDate,
+    city:            r.city,
+    paymentType:     r.payment_type    ?? r.paymentType,
+    matchedTxnId:    r.matched_txn_id  ?? r.matchedTxnId   ?? null,
+    matchConfidence: r.match_confidence ?? r.matchConfidence ?? 0,
+    expenseId:       r.expense_id      ?? r.expenseId       ?? null,
+    fileHash:        r.file_hash       ?? r.fileHash        ?? null,
+    warnings:        r.warnings        ?? [],
+    // Nested detail objects
+    hotelDetail:        r.hotel_detail      ?? r.hotelDetail      ?? null,
+    airfareDetail:      r.airfare_detail    ?? r.airfareDetail    ?? null,
+    taxiDetail:         r.taxi_detail       ?? r.taxiDetail       ?? null,
+    mealDetail:         r.meal_detail       ?? r.mealDetail       ?? null,
+    registrationDetail: r.registration_detail ?? r.registrationDetail ?? null,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: Convert a normalised expense into the Layer 3 ExpenseInput shape.
+// Layer 3 expects camelCase aliases (SAP Concur v4 convention).
+//
+// Notes:
+//   - expense_type MEALS (Layer 2 internal) → MEAL (Layer 3 enum)
+//   - HOTEL needs itemization[] built from hotelDetail
+//   - FLIGHT needs airfareDetail → airfareDetail (already camelCase)
+//   - Only city, vendor, amount, currency, transactionDate, paymentType are
+//     mandatory; all detail sub-objects are optional on the Layer 3 side.
+// ─────────────────────────────────────────────────────────────────────────────
+function toL3ExpenseInput(exp) {
+  // Map MEALS → MEAL to match Layer 3 ExpenseType enum
+  const expenseType = (exp.expenseType === 'MEALS') ? 'MEAL' : exp.expenseType;
+
+  // Layer 3 PaymentType enum: CORPORATE_CARD | PERSONAL_CASH | CORPORATE_CASH
+  // Layer 2 returns OUT_OF_POCKET for unmatched — map it to PERSONAL_CASH
+  const rawPayment = exp.paymentType || 'PERSONAL_CASH';
+  const paymentType = (rawPayment === 'OUT_OF_POCKET') ? 'PERSONAL_CASH' : rawPayment;
+
+  const input = {
+    expenseType,
+    vendor:          exp.vendor   || 'UNKNOWN',
+    amount:          exp.amount,
+    currency:        exp.currency || 'INR',
+    transactionDate: exp.transactionDate || new Date().toISOString().split('T')[0],
+    city:            exp.city     || 'UNKNOWN',
+    paymentType,
+  };
+
+  // Build itemization for HOTEL
+  if (expenseType === 'HOTEL' && exp.hotelDetail) {
+    const hd = exp.hotelDetail;
+    const nights = hd.num_nights ?? hd.numNights ?? 1;
+    const rate   = hd.nightly_rate ?? hd.nightlyRate ?? (exp.amount / nights);
+    const taxes  = hd.tax_amount   ?? hd.taxAmount   ?? 0;
+    const checkIn  = hd.check_in_date  ?? hd.checkInDate  ?? input.transactionDate;
+    const itemization = [];
+    for (let i = 0; i < nights; i++) {
+      const d = new Date(checkIn);
+      d.setDate(d.getDate() + i);
+      itemization.push({
+        nightDate: d.toISOString().split('T')[0],
+        roomRate:  rate,
+        taxes:     taxes / nights,
+      });
+    }
+    input.itemization = itemization;
+  }
+
+  // Build airfareDetail for FLIGHT
+  if (expenseType === 'FLIGHT' && exp.airfareDetail) {
+    const ad = exp.airfareDetail;
+    input.airfareDetail = {
+      origin:       ad.origin,
+      destination:  ad.destination,
+      travelClass:  ad.travel_class ?? ad.travelClass ?? 'ECONOMY',
+      flightNumber: ad.flight_number ?? ad.flightNumber ?? null,
+      ticketNumber: ad.ticket_number ?? ad.ticketNumber ?? null,
+    };
+  }
+
+  // Build taxiDetail for TAXI
+  if (expenseType === 'TAXI' && exp.taxiDetail) {
+    const td = exp.taxiDetail;
+    input.taxiDetail = {
+      fromLocation: td.from_location ?? td.fromLocation,
+      toLocation:   td.to_location   ?? td.toLocation,
+      distanceKm:   td.distance_km   ?? td.distanceKm ?? null,
+    };
+  }
+
+  // Build mealDetail for MEAL
+  if (expenseType === 'MEAL' && exp.mealDetail) {
+    const md = exp.mealDetail;
+    input.mealDetail = {
+      mealType:  md.meal_type   ?? md.mealType   ?? 'MEAL',
+      attendees: md.num_attendees ?? md.attendees ?? 1,
+    };
+  }
+
+  return input;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/report
+// Creates a new report folder in BFF session state AND registers
+// it in Layer 3 so the submit step can find it later.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/', async (req, res) => {
+  const { reportName, businessPurpose, policy, reportCategory } = req.body;
+
+  // Validate all 4 mandatory fields
+  const missing = [];
+  if (!reportName)      missing.push('reportName');
+  if (!businessPurpose) missing.push('businessPurpose');
+  if (!policy)          missing.push('policy');
+  if (!reportCategory)  missing.push('reportCategory');
+
+  if (missing.length > 0) {
+    return res.status(422).json({ error: 'Missing mandatory fields', missing });
+  }
+
+  const reportId = `RPT-${uuidv4().slice(0, 8).toUpperCase()}`;
+
+  try {
+    // Register in Layer 3 so submit can find it
+    await layer3.createReport(reportId, {
+      employeeId: DEFAULT_EMPLOYEE_ID,
+      reportName,
+      businessPurpose,
+      policy,
+      reportCategory,
+    });
+  } catch (err) {
+    const detail = err.response?.data || err.message;
+    return res.status(502).json({ error: 'Failed to register report in Layer 3', detail });
+  }
+
+  const folder = reportStore.create(reportId, {
+    employeeId: DEFAULT_EMPLOYEE_ID,
+    reportName,
+    businessPurpose,
+    policy,
+    reportCategory,
+  });
+
+  res.status(201).json({
+    reportId: folder.reportId,
+    status:    folder.status,
+    createdAt: folder.createdAt,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/report/:reportId
+// Returns the current state of the report folder from session.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:reportId', (req, res) => {
+  const folder = reportStore.get(req.params.reportId);
+  if (!folder) {
+    return res.status(404).json({ error: 'Report not found', reportId: req.params.reportId });
+  }
+  res.json(folder);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/report/:reportId/transactions
+// Fetches available corporate card transactions from Layer 3.
+// Layer 3 returns { employeeId, transactions[], total }.
+// We normalise to { reportId, totalCount, transactions[] }.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:reportId/transactions', async (req, res) => {
+  const folder = reportStore.get(req.params.reportId);
+  if (!folder) {
+    return res.status(404).json({ error: 'Report not found', reportId: req.params.reportId });
+  }
+
+  try {
+    const data = await layer3.getTransactions(folder.employeeId, { policy: folder.policy });
+
+    reportStore.update(folder.reportId, {
+      availableExpenses: data.transactions,
+      status: 'EXPENSES_LOADED',
+    });
+
+    res.json({
+      reportId:   folder.reportId,
+      totalCount: data.totalCount,
+      transactions: data.transactions,
+    });
+  } catch (err) {
+    const status  = err.response?.status || 502;
+    const message = err.response?.data?.detail || err.response?.data?.error || 'Failed to fetch transactions from Layer 3';
+    res.status(status).json({ error: message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/report/:reportId/receipts
+// Accepts uploaded receipt files from the browser.
+// Forwards them to Layer 2 for OCR + matching.
+// Layer 2 returns PipelineResult: { report_id, processed, matched, unmatched,
+//   errors, results: ReceiptResult[], summary }.
+// Stores returned expenses + warnings in the report folder.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/:reportId/receipts', upload.array('files'), async (req, res) => {
+  const folder = reportStore.get(req.params.reportId);
+  if (!folder) {
+    return res.status(404).json({ error: 'Report not found', reportId: req.params.reportId });
+  }
+
+  const files = req.files || [];
+  if (files.length === 0) {
+    return res.status(422).json({ error: 'No receipt files provided' });
+  }
+
+  reportStore.setStatus(folder.reportId, 'PROCESSING');
+
+  try {
+    const data = await layer2.processReceipts(folder.reportId, folder.employeeId, files);
+
+    // Layer 2 returns results[] not expenses[]
+    const rawResults = data.results || data.expenses || [];
+    const processedExpenses = rawResults.map(normaliseExpense);
+
+    // Collect all per-result warnings
+    const allWarnings = processedExpenses.flatMap(e => e.warnings || []);
+
+    reportStore.update(folder.reportId, {
+      processedExpenses,
+      warnings: allWarnings,
+      status: 'REVIEW',
+    });
+
+    res.json({
+      reportId:          folder.reportId,
+      processed:         data.processed  ?? rawResults.length,
+      matched:           data.matched    ?? 0,
+      unmatched:         data.unmatched  ?? rawResults.length,
+      expenses:          processedExpenses,
+      warnings:          allWarnings,
+      validationSummary: data.summary    ?? null,
+    });
+  } catch (err) {
+    reportStore.setStatus(folder.reportId, 'EXPENSES_LOADED');
+    const status  = err.response?.status || 502;
+    const message = err.response?.data?.detail || err.response?.data?.error || 'Failed to process receipts via Layer 2';
+    res.status(status).json({ error: message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/report/:reportId/submit
+// Two-step submit to Layer 3:
+//   Step 1 — POST /api/v4/expense-reports/:id/expenses  (bulk expense ingestion)
+//   Step 2 — PATCH /api/v4/expense-reports/:id/submit   (status transition)
+// Updates folder status to SUBMITTED on success.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/:reportId/submit', async (req, res) => {
+  const folder = reportStore.get(req.params.reportId);
+  if (!folder) {
+    return res.status(404).json({ error: 'Report not found', reportId: req.params.reportId });
+  }
+
+  if (folder.status === 'SUBMITTED') {
+    return res.status(409).json({ error: 'Report already submitted', reportId: folder.reportId });
+  }
+
+  const expenses = (folder.processedExpenses || [])
+    .filter(e => e.status !== 'error')
+    .map(toL3ExpenseInput);
+
+  try {
+    // Step 1 — push all expenses into Layer 3
+    let expenseResp = null;
+    if (expenses.length > 0) {
+      expenseResp = await layer3.submitExpenses(
+        folder.reportId,
+        folder.employeeId,
+        expenses
+      );
+    }
+
+    // Step 2 — transition report to SUBMITTED
+    const submitResp = await layer3.submitReport(folder.reportId);
+
+    // submitResp shape: { reportId, status, message }
+    reportStore.update(folder.reportId, {
+      status:      'SUBMITTED',
+      submittedAt: new Date().toISOString(),
+    });
+
+    res.json({
+      reportId:    folder.reportId,
+      status:      submitResp.status || 'SUBMITTED',
+      message:     submitResp.message || 'Report submitted successfully',
+      warnings:    expenseResp?.warnings || [],
+      validationSummary: expenseResp?.summary || null,
+    });
+  } catch (err) {
+    const status = err.response?.status || 502;
+    const body   = err.response?.data   || { error: 'Failed to submit report to Layer 3' };
+    res.status(status).json(body);
+  }
+});
+
+module.exports = router;

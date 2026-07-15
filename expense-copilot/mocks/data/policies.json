@@ -1,0 +1,24 @@
+[
+  {
+    "policyId": "POL-TE-AP-NON-VAT",
+    "name": "TRAVEL_AND_EXPENSE_AP_NON_VAT",
+    "description": "Travel and Expense (AP Non-VAT)",
+    "limits": {
+      "HOTEL": { "nightlyLimit": 8000, "currency": "INR" },
+      "MEAL": { "perMealLimit": 800, "currency": "INR" },
+      "TAXI": { "perRideLimit": 1000, "currency": "INR" },
+      "FLIGHT": { "classAllowed": "ECONOMY" }
+    },
+    "allowedCategories": [
+      "CONFERENCE_TRADESHOW_CUSTOMER",
+      "CONFERENCE_TRADESHOW_NON_CUSTOMER",
+      "CORPORATE_EVENT_RECOGNITION",
+      "CORPORATE_SERVICE_CORPS",
+      "CUSTOMER_CLIENT_RELATED_TRAVEL",
+      "EDUCATION_SEMINAR",
+      "NON_TRAVEL_EXPENSES"
+    ],
+    "allowedCurrencies": ["INR", "USD", "EUR", "GBP"],
+    "allowedPaymentTypes": ["CORPORATE_CARD", "PERSONAL_CARD", "CASH"]
+  }
+]

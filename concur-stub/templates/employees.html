@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Employees{% endblock %}
+{% block content %}
+
+<h1>Employees</h1>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Employee ID</th>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Department</th>
+        <th>Travel Policy</th>
+        <th>Manager</th>
+        <th>Active</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for emp in employees %}
+      <tr>
+        <td><code>{{ emp.id }}</code></td>
+        <td>{{ emp.name }}</td>
+        <td>{{ emp.email }}</td>
+        <td>{{ emp.department }}</td>
+        <td>
+          <span class="badge {% if emp.travel_policy_name == 'EXECUTIVE' %}badge-submitted{% else %}badge-draft{% endif %}">
+            {{ emp.travel_policy_name }}
+          </span>
+        </td>
+        <td>{% if emp.manager_id %}<code>{{ emp.manager_id }}</code>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
+        <td>{% if emp.is_active %}<span class="badge badge-approved">Yes</span>{% else %}<span class="badge badge-rejected">No</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,74 @@
+[
+  {
+    "txnId": "TXN001",
+    "employeeId": "EMP001",
+    "vendor": "Marriott Bengaluru",
+    "amount": 18000,
+    "currency": "INR",
+    "transactionDate": "2026-07-21",
+    "category": "ACCOMMODATION",
+    "policy": "TRAVEL_AND_EXPENSE_AP_NON_VAT",
+    "paymentType": "CORPORATE_CARD",
+    "status": "UNMATCHED"
+  },
+  {
+    "txnId": "TXN002",
+    "employeeId": "EMP001",
+    "vendor": "Uber",
+    "amount": 450,
+    "currency": "INR",
+    "transactionDate": "2026-07-21",
+    "category": "TRAVEL",
+    "policy": "TRAVEL_AND_EXPENSE_AP_NON_VAT",
+    "paymentType": "CORPORATE_CARD",
+    "status": "UNMATCHED"
+  },
+  {
+    "txnId": "TXN003",
+    "employeeId": "EMP001",
+    "vendor": "Air India",
+    "amount": 8500,
+    "currency": "INR",
+    "transactionDate": "2026-07-20",
+    "category": "TRAVEL",
+    "policy": "TRAVEL_AND_EXPENSE_AP_NON_VAT",
+    "paymentType": "CORPORATE_CARD",
+    "status": "UNMATCHED"
+  },
+  {
+    "txnId": "TXN004",
+    "employeeId": "EMP001",
+    "vendor": "Swiggy",
+    "amount": 650,
+    "currency": "INR",
+    "transactionDate": "2026-07-22",
+    "category": "MEALS",
+    "policy": "TRAVEL_AND_EXPENSE_AP_NON_VAT",
+    "paymentType": "CORPORATE_CARD",
+    "status": "UNMATCHED"
+  },
+  {
+    "txnId": "TXN005",
+    "employeeId": "EMP001",
+    "vendor": "Ola",
+    "amount": 380,
+    "currency": "INR",
+    "transactionDate": "2026-07-23",
+    "category": "TRAVEL",
+    "policy": "TRAVEL_AND_EXPENSE_AP_NON_VAT",
+    "paymentType": "CORPORATE_CARD",
+    "status": "UNMATCHED"
+  },
+  {
+    "txnId": "TXN006",
+    "employeeId": "EMP002",
+    "vendor": "Hilton New York",
+    "amount": 250,
+    "currency": "USD",
+    "transactionDate": "2026-07-15",
+    "category": "ACCOMMODATION",
+    "policy": "INTERNATIONAL",
+    "paymentType": "CORPORATE_CARD",
+    "status": "UNMATCHED"
+  }
+]

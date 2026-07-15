@@ -1,0 +1,174 @@
+/* static/style.css — IBM Carbon-inspired minimal admin dashboard */
+
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                        */
+/* ------------------------------------------------------------------ */
+:root {
+  --carbon-gray-10:  #f4f4f4;
+  --carbon-gray-20:  #e0e0e0;
+  --carbon-gray-60:  #6f6f6f;
+  --carbon-gray-80:  #393939;
+  --carbon-gray-100: #161616;
+  --carbon-blue-60:  #0f62fe;
+  --carbon-blue-70:  #0043ce;
+  --carbon-teal-50:  #009d9a;
+  --carbon-green-50: #24a148;
+  --carbon-red-50:   #da1e28;
+  --carbon-yellow-30: #f1c21b;
+  --carbon-purple-60: #8a3ffc;
+
+  --text-primary:    var(--carbon-gray-100);
+  --text-secondary:  var(--carbon-gray-60);
+  --bg-primary:      #ffffff;
+  --bg-secondary:    var(--carbon-gray-10);
+  --border-color:    var(--carbon-gray-20);
+  --nav-bg:          var(--carbon-gray-100);
+  --nav-text:        #ffffff;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reset & base                                                          */
+/* ------------------------------------------------------------------ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  line-height: 1.5;
+}
+
+a { color: var(--carbon-blue-60); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ------------------------------------------------------------------ */
+/* Navigation                                                            */
+/* ------------------------------------------------------------------ */
+nav {
+  background: var(--nav-bg);
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  height: 3rem;
+  gap: 2rem;
+}
+nav .brand {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-right: 1rem;
+}
+nav a {
+  color: var(--carbon-gray-20);
+  font-size: 14px;
+  padding: 0 0.25rem;
+}
+nav a:hover, nav a.active { color: #fff; text-decoration: none; }
+
+/* ------------------------------------------------------------------ */
+/* Layout                                                                */
+/* ------------------------------------------------------------------ */
+.page { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+h1 { font-size: 1.75rem; font-weight: 400; margin-bottom: 1.5rem; color: var(--carbon-gray-100); }
+h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--carbon-gray-80); }
+
+/* ------------------------------------------------------------------ */
+/* Summary tiles (dashboard)                                            */
+/* ------------------------------------------------------------------ */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.tile {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  padding: 1.25rem 1.5rem;
+}
+.tile .label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+.tile .value { font-size: 2rem; font-weight: 300; color: var(--carbon-gray-100); margin-top: 0.25rem; }
+
+/* ------------------------------------------------------------------ */
+/* Tables                                                                */
+/* ------------------------------------------------------------------ */
+.table-wrap { overflow-x: auto; background: var(--bg-primary); border: 1px solid var(--border-color); }
+
+table { width: 100%; border-collapse: collapse; }
+thead { background: var(--carbon-gray-10); }
+th { text-align: left; padding: 0.625rem 1rem; font-size: 12px; font-weight: 600;
+     text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary);
+     border-bottom: 1px solid var(--border-color); }
+td { padding: 0.75rem 1rem; font-size: 13px; border-bottom: 1px solid var(--border-color); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--carbon-gray-10); }
+
+/* ------------------------------------------------------------------ */
+/* Status badges                                                         */
+/* ------------------------------------------------------------------ */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-radius: 2px;
+  text-transform: uppercase;
+}
+.badge-draft         { background: #d0e2ff; color: var(--carbon-blue-70); }
+.badge-manual-review { background: #ffd6e8; color: #9f1853; }
+.badge-submitted     { background: #d9fbfb; color: #005d5d; }
+.badge-approved      { background: #defbe6; color: #0e6027; }
+.badge-rejected      { background: #fff1f1; color: var(--carbon-red-50); }
+.badge-matched       { background: #defbe6; color: #0e6027; }
+.badge-pending       { background: #fff8e1; color: #8e6a00; }
+.badge-available     { background: #d0e2ff; color: var(--carbon-blue-70); }
+.badge-warning       { background: #fff8e1; color: #8e6a00; }
+.badge-info          { background: #d9fbfb; color: #005d5d; }
+
+/* ------------------------------------------------------------------ */
+/* Cards / sections                                                      */
+/* ------------------------------------------------------------------ */
+.card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.card h2 { margin-bottom: 1rem; }
+
+/* ------------------------------------------------------------------ */
+/* Warning / error panels                                               */
+/* ------------------------------------------------------------------ */
+.warnings-list { list-style: none; padding: 0; }
+.warnings-list li {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.25rem;
+  border-left: 3px solid var(--carbon-yellow-30);
+  background: #fff8e1;
+  font-size: 13px;
+}
+.warnings-list li.info { border-color: var(--carbon-teal-50); background: #d9fbfb; }
+
+/* ------------------------------------------------------------------ */
+/* Pagination                                                            */
+/* ------------------------------------------------------------------ */
+.pagination { display: flex; gap: 0.5rem; margin-top: 1rem; align-items: center; }
+.pagination a, .pagination span {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border-color);
+  font-size: 13px;
+  background: var(--bg-primary);
+}
+.pagination .current { background: var(--carbon-blue-60); color: #fff; border-color: var(--carbon-blue-60); }
+
+/* ------------------------------------------------------------------ */
+/* Utility                                                               */
+/* ------------------------------------------------------------------ */
+.text-secondary { color: var(--text-secondary); }
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.empty { color: var(--text-secondary); font-style: italic; padding: 1rem 0; }
+code { font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: var(--carbon-gray-10); padding: 1px 4px; }

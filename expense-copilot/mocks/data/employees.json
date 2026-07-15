@@ -1,0 +1,20 @@
+[
+  {
+    "employeeId": "EMP001",
+    "name": "Vani Mohindru",
+    "email": "vani.mohindru@ibm.com",
+    "department": "Consulting",
+    "costCenter": "CC-1001",
+    "defaultCurrency": "INR",
+    "policyId": "POL-INDIA-DOM"
+  },
+  {
+    "employeeId": "EMP002",
+    "name": "Arjun Sharma",
+    "email": "arjun.sharma@ibm.com",
+    "department": "Technology",
+    "costCenter": "CC-1002",
+    "defaultCurrency": "INR",
+    "policyId": "POL-INTL"
+  }
+]

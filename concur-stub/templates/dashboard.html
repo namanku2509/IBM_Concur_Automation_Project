@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<h1>SAP Concur Stub — Admin Dashboard</h1>
+
+<div class="tiles">
+  <div class="tile">
+    <div class="label">Expense Reports</div>
+    <div class="value">{{ total_reports }}</div>
+  </div>
+  <div class="tile">
+    <div class="label">Expenses</div>
+    <div class="value">{{ total_expenses }}</div>
+  </div>
+  <div class="tile">
+    <div class="label">Employees</div>
+    <div class="value">{{ total_employees }}</div>
+  </div>
+  {% for status, count in status_counts.items() %}
+  <div class="tile">
+    <div class="label">{{ status }}</div>
+    <div class="value">{{ count }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Recent Activity</h2>
+  {% if recent_audit %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          <th>Entity</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in recent_audit %}
+        <tr>
+          <td class="text-secondary"><code>{{ entry.created_at.strftime('%Y-%m-%d %H:%M') }}</code></td>
+          <td><span class="badge badge-info">{{ entry.event_type }}</span></td>
+          <td><code>{{ entry.entity_type }}:{{ entry.entity_id }}</code></td>
+          <td>{{ entry.description }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No audit events yet. Submit an expense report to see activity here.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

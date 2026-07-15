@@ -1,0 +1,42 @@
+# ── Python virtual environments ──────────────────────────────────────────────
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+
+# ── Node / React ──────────────────────────────────────────────────────────────
+node_modules/
+expense-copilot/frontend/build/
+npm-debug.log*
+
+# ── Secrets — NEVER commit these ─────────────────────────────────────────────
+.env
+*.pem
+*.key
+
+# ── Databases ─────────────────────────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ── OS / Editor junk ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ── Test / demo artifacts ─────────────────────────────────────────────────────
+demo_receipt.py
+demo_full.py
+endobj
+Receipts/
+
+# ── Docling model cache ───────────────────────────────────────────────────────
+.docling/

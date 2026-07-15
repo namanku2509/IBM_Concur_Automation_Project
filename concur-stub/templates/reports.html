@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Expense Reports{% endblock %}
+{% block content %}
+
+<h1>Expense Reports</h1>
+
+{% macro status_badge(status) %}
+  {% if status == 'DRAFT' %}<span class="badge badge-draft">DRAFT</span>
+  {% elif status == 'MANUAL_REVIEW' %}<span class="badge badge-manual-review">MANUAL REVIEW</span>
+  {% elif status == 'SUBMITTED' %}<span class="badge badge-submitted">SUBMITTED</span>
+  {% elif status == 'APPROVED' %}<span class="badge badge-approved">APPROVED</span>
+  {% elif status == 'REJECTED' %}<span class="badge badge-rejected">REJECTED</span>
+  {% else %}<span class="badge">{{ status }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% if reports %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Report ID</th>
+        <th>Employee</th>
+        <th>Name</th>
+        <th>Policy</th>
+        <th>Status</th>
+        <th>Total</th>
+        <th>Currency</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in reports %}
+      <tr>
+        <td><a href="/admin/reports/{{ r.id }}"><code>{{ r.id }}</code></a></td>
+        <td><code>{{ r.employee_id }}</code></td>
+        <td>{{ r.report_name }}</td>
+        <td>{{ r.travel_policy_name }}</td>
+        <td>{{ status_badge(r.status) }}</td>
+        <td style="text-align:right">{{ '₹{:,.2f}'.format(r.total_amount) }}</td>
+        <td>{{ r.currency }}</td>
+        <td class="text-secondary">{{ r.created_at.strftime('%Y-%m-%d') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No expense reports found. Create one via POST /api/v4/expense-reports.</p>
+{% endif %}
+
+{% endblock %}

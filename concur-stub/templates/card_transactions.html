@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Card Transactions{% endblock %}
+{% block content %}
+
+<h1>Corporate Card Transactions</h1>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Transaction ID</th>
+        <th>Employee</th>
+        <th>Vendor</th>
+        <th>Date</th>
+        <th>Amount</th>
+        <th>Card ****</th>
+        <th>Status</th>
+        <th>Matched Expense</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in txns %}
+      <tr>
+        <td><code>{{ t.id }}</code></td>
+        <td><code>{{ t.employee_id }}</code></td>
+        <td>{{ t.vendor }}</td>
+        <td>{{ t.transaction_date }}</td>
+        <td style="text-align:right">{{ t.currency }} {{ '{:,.2f}'.format(t.amount) }}</td>
+        <td><code>****{{ t.card_last_four }}</code></td>
+        <td>
+          {% if t.status == 'AVAILABLE' %}<span class="badge badge-available">AVAILABLE</span>
+          {% elif t.status == 'MATCHED' %}<span class="badge badge-matched">MATCHED</span>
+          {% else %}<span class="badge">{{ t.status }}</span>{% endif %}
+        </td>
+        <td>{% if t.matched_expense_id %}<code>{{ t.matched_expense_id }}</code>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}SAP Concur Stub{% endblock %} — Admin</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<nav>
+  <span class="brand">⬛ Concur Stub</span>
+  <a href="/admin"                  {% if request.url.path == '/admin' or request.url.path == '/admin/' %}class="active"{% endif %}>Dashboard</a>
+  <a href="/admin/reports"          {% if '/admin/reports' in request.url.path %}class="active"{% endif %}>Reports</a>
+  <a href="/admin/employees"        {% if '/admin/employees' in request.url.path %}class="active"{% endif %}>Employees</a>
+  <a href="/admin/card-transactions"{% if '/admin/card-transactions' in request.url.path %}class="active"{% endif %}>Card Transactions</a>
+  <a href="/admin/audit-log"        {% if '/admin/audit-log' in request.url.path %}class="active"{% endif %}>Audit Log</a>
+  <a href="/docs" target="_blank">API Docs ↗</a>
+</nav>
+
+<div class="page">
+  {% block content %}{% endblock %}
+</div>
+
+</body>
+</html>

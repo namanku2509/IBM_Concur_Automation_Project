@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Report {{ report.id }}{% endblock %}
+{% block content %}
+
+{% macro status_badge(status) %}
+  {% if status == 'DRAFT' %}<span class="badge badge-draft">DRAFT</span>
+  {% elif status == 'MANUAL_REVIEW' %}<span class="badge badge-manual-review">MANUAL REVIEW</span>
+  {% elif status == 'SUBMITTED' %}<span class="badge badge-submitted">SUBMITTED</span>
+  {% elif status == 'APPROVED' %}<span class="badge badge-approved">APPROVED</span>
+  {% elif status == 'REJECTED' %}<span class="badge badge-rejected">REJECTED</span>
+  {% else %}<span class="badge">{{ status }}</span>{% endif %}
+{% endmacro %}
+
+{% macro expense_status_badge(status) %}
+  {% if status == 'MATCHED' %}<span class="badge badge-matched">MATCHED</span>
+  {% elif status == 'PENDING' %}<span class="badge badge-pending">PENDING</span>
+  {% elif status == 'MANUAL_REVIEW' %}<span class="badge badge-manual-review">MANUAL REVIEW</span>
+  {% else %}<span class="badge">{{ status }}</span>{% endif %}
+{% endmacro %}
+
+<h1>Report <code>{{ report.id }}</code> &nbsp; {{ status_badge(report.status) }}</h1>
+
+<!-- Report metadata -->
+<div class="card">
+  <h2>Report Details</h2>
+  <table style="width:auto; border:none">
+    <tbody>
+      <tr><td style="padding:4px 16px 4px 0; color:#6f6f6f">Employee</td><td><code>{{ report.employee_id }}</code></td></tr>
+      <tr><td style="padding:4px 16px 4px 0; color:#6f6f6f">Name</td><td>{{ report.report_name }}</td></tr>
+      <tr><td style="padding:4px 16px 4px 0; color:#6f6f6f">Business Purpose</td><td>{{ report.business_purpose }}</td></tr>
+      <tr><td style="padding:4px 16px 4px 0; color:#6f6f6f">Travel Policy</td><td><strong>{{ report.travel_policy_name }}</strong></td></tr>
+      <tr><td style="padding:4px 16px 4px 0; color:#6f6f6f">Category</td><td>{{ report.expense_category }}</td></tr>
+      <tr><td style="padding:4px 16px 4px 0; color:#6f6f6f">Total Amount</td><td><strong>{{ report.currency }} {{ '{:,.2f}'.format(report.total_amount) }}</strong></td></tr>
+      <tr><td style="padding:4px 16px 4px 0; color:#6f6f6f">Trip</td>
+          <td>{% if report.trip_id %}<code>{{ report.trip_id }}</code>{% else %}<span class="text-secondary">Not matched</span>{% endif %}</td></tr>
+      <tr><td style="padding:4px 16px 4px 0; color:#6f6f6f">Created</td><td>{{ report.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</td></tr>
+      {% if report.submitted_at %}<tr><td style="padding:4px 16px 4px 0; color:#6f6f6f">Submitted</td><td>{{ report.submitted_at.strftime('%Y-%m-%d %H:%M UTC') }}</td></tr>{% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Expenses -->
+<div class="card">
+  <h2>Expenses ({{ expenses | length }})</h2>
+  {% if expenses %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Expense ID</th>
+          <th>Type</th>
+          <th>Vendor</th>
+          <th>Date</th>
+          <th>Amount</th>
+          <th>Payment</th>
+          <th>Status</th>
+          <th>Card Txn</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in expenses %}
+        <tr>
+          <td><code>{{ e.id }}</code></td>
+          <td><span class="badge badge-info">{{ e.expense_type }}</span></td>
+          <td>{{ e.vendor }}</td>
+          <td>{{ e.transaction_date }}</td>
+          <td style="text-align:right">{{ e.currency }} {{ '{:,.2f}'.format(e.amount) }}</td>
+          <td class="text-secondary">{{ e.payment_type }}</td>
+          <td>{{ expense_status_badge(e.status) }}</td>
+          <td>{% if e.card_transaction_id %}<code>{{ e.card_transaction_id }}</code>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
+        </tr>
+        {% if e.hotel_itemization_lines %}
+        <tr style="background:#f9f9f9">
+          <td colspan="8" style="padding-left:2rem">
+            <strong>Hotel Itemization:</strong>
+            {% for line in e.hotel_itemization_lines %}
+            &nbsp; {{ line.night_date }}: Room ₹{{ '{:,.2f}'.format(line.room_rate) }} + Tax ₹{{ '{:,.2f}'.format(line.taxes) }} + Incidentals ₹{{ '{:,.2f}'.format(line.incidentals) }} = <strong>₹{{ '{:,.2f}'.format(line.line_total) }}</strong>
+            {% if not loop.last %} | {% endif %}
+            {% endfor %}
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No expenses added yet.</p>
+  {% endif %}
+</div>
+
+<!-- Audit trail -->
+<div class="card">
+  <h2>Audit Trail</h2>
+  {% if audit_entries %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Event</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        {% for entry in audit_entries %}
+        <tr>
+          <td class="text-secondary"><code>{{ entry.created_at.strftime('%H:%M:%S') }}</code></td>
+          <td><span class="badge badge-info">{{ entry.event_type }}</span></td>
+          <td>{{ entry.description }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No audit events for this report.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
