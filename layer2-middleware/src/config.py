@@ -55,8 +55,8 @@ LAYER3_ENDPOINTS: dict[str, str] = {
     "register_receipt": "/api/v4/receipts/register",
     # GET    — list corporate card transactions for an employee
     "available_transactions": "/api/v4/card-transactions",
-    # POST   — bulk submit all expenses for a report
-    "submit_expenses": "/api/v4/expense-reports/{report_id}/expenses",
+    # NOTE: bulk expense submission is handled directly by the BFF (Layer 1),
+    # not by Layer 2. Layer 2 only registers receipts and matches transactions.
 }
 
 

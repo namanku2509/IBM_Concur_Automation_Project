@@ -70,7 +70,7 @@ class ExpenseInput(BaseModel):
     transaction_date: str = Field(..., alias="transactionDate")   # YYYY-MM-DD
     city: str
     payment_type: Literal["CORPORATE_CARD", "PERSONAL_CASH", "CORPORATE_CASH"] = Field(
-        default="OUT_OF_POCKET", alias="paymentType"
+        default="PERSONAL_CASH", alias="paymentType"
     )
     receipt_id: Optional[str] = Field(default=None, alias="receiptId")
     notes: Optional[str] = None

@@ -1,0 +1,43 @@
+.create-report-page {
+  min-height: 100vh;
+  background-color: #f4f4f4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 1rem;
+}
+
+.create-report-header {
+  width: 100%;
+  max-width: 600px;
+  margin-bottom: 1.5rem;
+}
+
+.create-report-subtitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0f62fe;
+  margin: 0 0 0.5rem 0;
+}
+
+.create-report-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #161616;
+  margin: 0 0 0.5rem 0;
+}
+
+.create-report-desc {
+  font-size: 0.875rem;
+  color: #525252;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.create-report-tile {
+  width: 100%;
+  max-width: 600px;
+  padding: 2rem !important;
+}

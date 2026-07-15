@@ -80,11 +80,11 @@ class AirfareDetailInput(BaseModel):
     """Required for FLIGHT expenses. travel_class is policy-validated."""
     model_config = ConfigDict(populate_by_name=True)
 
-    origin: str = Field(..., description="Departure airport/city", examples=["Bengaluru"])
-    destination: str = Field(..., description="Arrival airport/city", examples=["Delhi"])
+    origin: str = Field(default="UNKNOWN", description="Departure airport/city", examples=["Bengaluru"])
+    destination: str = Field(default="UNKNOWN", description="Arrival airport/city", examples=["Delhi"])
     flight_number: Optional[str] = Field(default=None, alias="flightNumber", examples=["6E-204"])
     travel_class: TravelClass = Field(
-        ...,
+        default=TravelClass.ECONOMY,
         alias="travelClass",
         description="Cabin class — ECONOMY or BUSINESS",
     )
@@ -96,13 +96,13 @@ class TaxiDetailInput(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     from_location: str = Field(
-        ...,
+        default="UNKNOWN",
         alias="fromLocation",
         description="Pickup location",
         examples=["Kempegowda International Airport"],
     )
     to_location: str = Field(
-        ...,
+        default="UNKNOWN",
         alias="toLocation",
         description="Drop-off location",
         examples=["Marriott, Bengaluru"],

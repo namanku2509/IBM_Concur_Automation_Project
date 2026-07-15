@@ -10,7 +10,7 @@ const layer2 = require('../services/layer2Service');
 // Accept files in memory so we can forward buffers to Layer 2
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Hardcoded for prototype — in production this comes from auth/session
+// Default employee — overridden by the employeeId field sent from the frontend
 const DEFAULT_EMPLOYEE_ID = 'EMP001';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,8 +102,8 @@ function toL3ExpenseInput(exp) {
   if (expenseType === 'FLIGHT' && exp.airfareDetail) {
     const ad = exp.airfareDetail;
     input.airfareDetail = {
-      origin:       ad.origin,
-      destination:  ad.destination,
+      origin:       ad.origin       ?? 'UNKNOWN',
+      destination:  ad.destination  ?? 'UNKNOWN',
       travelClass:  ad.travel_class ?? ad.travelClass ?? 'ECONOMY',
       flightNumber: ad.flight_number ?? ad.flightNumber ?? null,
       ticketNumber: ad.ticket_number ?? ad.ticketNumber ?? null,
@@ -114,9 +114,9 @@ function toL3ExpenseInput(exp) {
   if (expenseType === 'TAXI' && exp.taxiDetail) {
     const td = exp.taxiDetail;
     input.taxiDetail = {
-      fromLocation: td.from_location ?? td.fromLocation,
-      toLocation:   td.to_location   ?? td.toLocation,
-      distanceKm:   td.distance_km   ?? td.distanceKm ?? null,
+      fromLocation: td.from_location ?? td.fromLocation ?? 'UNKNOWN',
+      toLocation:   td.to_location   ?? td.toLocation   ?? 'UNKNOWN',
+      distanceKm:   td.distance_km   ?? td.distanceKm   ?? null,
     };
   }
 
@@ -138,9 +138,9 @@ function toL3ExpenseInput(exp) {
 // it in Layer 3 so the submit step can find it later.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
-  const { reportName, businessPurpose, policy, reportCategory } = req.body;
+  const { employeeId, reportName, businessPurpose, policy, reportCategory } = req.body;
 
-  // Validate all 4 mandatory fields
+  // Validate mandatory fields
   const missing = [];
   if (!reportName)      missing.push('reportName');
   if (!businessPurpose) missing.push('businessPurpose');
@@ -153,10 +153,13 @@ router.post('/', async (req, res) => {
 
   const reportId = `RPT-${uuidv4().slice(0, 8).toUpperCase()}`;
 
+  // Use employeeId from request body, fallback to default
+  const resolvedEmployeeId = employeeId || DEFAULT_EMPLOYEE_ID;
+
   try {
     // Register in Layer 3 so submit can find it
     await layer3.createReport(reportId, {
-      employeeId: DEFAULT_EMPLOYEE_ID,
+      employeeId: resolvedEmployeeId,
       reportName,
       businessPurpose,
       policy,
@@ -168,7 +171,7 @@ router.post('/', async (req, res) => {
   }
 
   const folder = reportStore.create(reportId, {
-    employeeId: DEFAULT_EMPLOYEE_ID,
+    employeeId: resolvedEmployeeId,
     reportName,
     businessPurpose,
     policy,
