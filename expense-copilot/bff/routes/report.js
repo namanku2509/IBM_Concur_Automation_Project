@@ -302,7 +302,13 @@ router.post('/:reportId/submit', async (req, res) => {
 
   const expenses = (folder.processedExpenses || [])
     .filter(e => e.status !== 'error')
+    .filter(e => e.amount && e.amount > 0)   // skip zero-amount receipts — L3 rejects amount=0
+    .filter(e => e.vendor)                   // skip receipts where OCR extracted no vendor
     .map(toL3ExpenseInput);
+
+  // Count skipped receipts for the response
+  const skippedCount = (folder.processedExpenses || [])
+    .filter(e => e.status !== 'error' && (!e.amount || e.amount <= 0 || !e.vendor)).length;
 
   try {
     // Step 1 — push all expenses into Layer 3
@@ -341,7 +347,9 @@ router.post('/:reportId/submit', async (req, res) => {
     res.json({
       reportId:          folder.reportId,
       status:            submitResp.status || 'SUBMITTED',
-      message:           submitResp.message || 'Report submitted successfully',
+      message:           skippedCount > 0
+        ? `Report submitted. ${expenses.length} expense${expenses.length !== 1 ? 's' : ''} submitted; ${skippedCount} receipt${skippedCount !== 1 ? 's' : ''} skipped (OCR could not extract amount/vendor from image PDFs).`
+        : (submitResp.message || 'Report submitted successfully'),
       warnings:          safeWarnings,
       validationSummary: expenseResp?.summary || null,
     });
