@@ -33,8 +33,11 @@ _W_AMOUNT = 0.40
 _W_DATE = 0.15
 _W_CITY = 0.05
 
-# Amount tolerance: ±2%
-_AMOUNT_TOLERANCE = 0.02
+# Amount tolerance: ±10%
+# Increased from 2% — OCR on image-based PDFs (ChatGPT receipts, scans)
+# can introduce rounding errors, and real booking confirmations sometimes
+# show slightly different amounts than what was charged to the card.
+_AMOUNT_TOLERANCE = 0.10
 
 
 @dataclass

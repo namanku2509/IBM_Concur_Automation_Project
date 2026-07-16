@@ -64,7 +64,7 @@ _TAXI_SCHEMA = """{
 
 _FLIGHT_SCHEMA = """{
   "vendor":           "Airline name — IndiGo, Air India, Air India Express, SpiceJet, Vistara, etc.",
-  "amount":           "Total ticket price — the LARGEST amount on the receipt including all taxes and fees. On booking confirmations look for the final 'Total Amount', not partial amounts or convenience fees. If multiple amounts are shown (e.g. ₹107 and ₹8311), take the largest one as the ticket total.",
+  "amount":           "FINAL total ticket price actually charged. PRIORITY ORDER: (1) Look for 'TOTAL FARE', 'Total Fare', 'TOTAL AMOUNT', 'Amount Paid', 'Grand Total' label — use that exact value. (2) If no explicit total label, sum Base Fare + Taxes only. (3) NEVER pick a subtotal, base fare alone, or convenience fee alone. On IndiGo receipts 'TOTAL FARE' is the correct field. If Base Fare is 4200 and Taxes are 1300, TOTAL FARE is 5500 — use 5500.",
   "currency":         "3-letter ISO code — ₹ or INR = INR",
   "transaction_date": "Date of travel (departure date) — YYYY-MM-DD. Look for departure date, travel date, or journey date.",
   "city":             "Full departure city name (not airport code). E.g. if origin is BLR, city is Bengaluru.",

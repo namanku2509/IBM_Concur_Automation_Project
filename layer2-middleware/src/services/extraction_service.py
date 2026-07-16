@@ -86,7 +86,11 @@ def _build_extracted_expense(
     ocr_result: OcrResult,
 ) -> ExtractedExpense:
     vendor = _str_or_none(parsed.get("vendor"))
-    amount = _safe_float(parsed.get("amount"), default=0.0)
+    raw_amount = _safe_float(parsed.get("amount"), default=0.0)
+    # ── Post-extraction amount validator ──────────────────────────────────────
+    # Sanity-check: the LLM's extracted amount must actually appear in the OCR
+    # text (within 1%). If it doesn't, fall back to the labelled-total extractor.
+    amount = _validate_amount_in_text(raw_amount, ocr_result.raw_text, expense_type)
     currency = _str_or_none(parsed.get("currency")) or "INR"
     transaction_date = _parse_date(parsed.get("transaction_date"))
     city = _str_or_none(parsed.get("city"))
@@ -239,6 +243,98 @@ def _extract_max_amount(text: str) -> Optional[float]:
     if not amounts:
         return None
     return max(float(a.replace(",", "")) for a in amounts)
+
+
+def _extract_labelled_total(text: str) -> Optional[float]:
+    """
+    Extract the amount next to an explicit total label.
+    Checks for common total labels in priority order:
+      TOTAL FARE, TOTAL AMOUNT DUE, TOTAL AMOUNT, GRAND TOTAL,
+      AMOUNT PAID, AMOUNT DUE, TOTAL BILL, TOTAL:
+    Returns the FIRST labelled total found (most specific wins).
+    """
+    # Priority patterns — ordered from most to least specific
+    patterns = [
+        r"TOTAL\s+FARE\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+        r"TOTAL\s+AMOUNT\s+DUE\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+        r"TOTAL\s+AMOUNT\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+        r"GRAND\s+TOTAL\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+        r"AMOUNT\s+PAID\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+        r"AMOUNT\s+DUE\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+        r"TOTAL\s+BILL\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+        r"(?:^|\n)\s*TOTAL\s*[:\-]\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if m:
+            try:
+                return float(m.group(1).replace(",", ""))
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
+def _all_amounts_in_text(text: str) -> list[float]:
+    """Return all distinct numeric amounts found in the OCR text."""
+    raw = re.findall(r"(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)", text, re.IGNORECASE)
+    if not raw:
+        raw = re.findall(r"\b(\d{3,7}(?:\.\d{1,2})?)\b", text)
+    result = []
+    seen = set()
+    for r in raw:
+        try:
+            v = float(r.replace(",", ""))
+            if v > 0 and v not in seen:
+                seen.add(v)
+                result.append(v)
+        except (ValueError, TypeError):
+            continue
+    return result
+
+
+def _validate_amount_in_text(
+    llm_amount: Optional[float],
+    ocr_text: str,
+    expense_type: str,
+) -> float:
+    """
+    Validate that the LLM-extracted amount actually appears in the OCR text.
+    If it doesn't (within 1% tolerance), fall back to the labelled total,
+    then to the largest amount in text.
+
+    This guards against the LLM hallucinating or mixing up amounts from
+    different parts of a long receipt or across batch runs.
+    """
+    if llm_amount is None or llm_amount <= 0:
+        # LLM gave nothing useful — use labelled total or max
+        return _extract_labelled_total(ocr_text) or _extract_max_amount(ocr_text) or 0.0
+
+    # Check if llm_amount is literally present in the OCR text (within 1%)
+    all_amounts = _all_amounts_in_text(ocr_text)
+    for a in all_amounts:
+        if a > 0 and abs(llm_amount - a) / a <= 0.01:
+            # Amount is present in the text — LLM is correct
+            logger.debug("Amount %.2f validated in OCR text ✓", llm_amount)
+            return llm_amount
+
+    # LLM amount not found in text — it hallucinated or used wrong receipt
+    logger.warning(
+        "Amount %.2f from LLM NOT found in OCR text (candidates: %s) — "
+        "falling back to labelled total",
+        llm_amount, all_amounts[:8],
+    )
+    labelled = _extract_labelled_total(ocr_text)
+    if labelled:
+        logger.info("Using labelled total %.2f instead of LLM amount %.2f", labelled, llm_amount)
+        return labelled
+
+    # Last resort — largest amount in text
+    max_amt = _extract_max_amount(ocr_text)
+    if max_amt:
+        logger.info("Using max amount %.2f as last resort", max_amt)
+        return max_amt
+
+    return llm_amount  # Give up and trust LLM
 
 
 def _extract_distance_km(text: str) -> Optional[float]:
