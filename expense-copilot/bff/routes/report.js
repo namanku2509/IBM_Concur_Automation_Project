@@ -318,23 +318,62 @@ router.post('/:reportId/submit', async (req, res) => {
     // Step 2 — transition report to SUBMITTED
     const submitResp = await layer3.submitReport(folder.reportId);
 
-    // submitResp shape: { reportId, status, message }
     reportStore.update(folder.reportId, {
       status:      'SUBMITTED',
       submittedAt: new Date().toISOString(),
     });
 
+    // Normalise warnings — ensure they are always plain strings, never objects
+    const rawWarnings = expenseResp?.warnings || [];
+    const safeWarnings = rawWarnings.map(w => {
+      if (typeof w === 'string') return { code: 'WARNING', message: w, severity: 'WARNING' };
+      if (typeof w === 'object' && w !== null) {
+        return {
+          code:     w.code    || 'WARNING',
+          message:  w.message || w.msg || JSON.stringify(w),
+          severity: w.severity || 'WARNING',
+          field:    w.field   || w.loc?.join('.') || undefined,
+        };
+      }
+      return { code: 'WARNING', message: String(w), severity: 'WARNING' };
+    });
+
     res.json({
-      reportId:    folder.reportId,
-      status:      submitResp.status || 'SUBMITTED',
-      message:     submitResp.message || 'Report submitted successfully',
-      warnings:    expenseResp?.warnings || [],
+      reportId:          folder.reportId,
+      status:            submitResp.status || 'SUBMITTED',
+      message:           submitResp.message || 'Report submitted successfully',
+      warnings:          safeWarnings,
       validationSummary: expenseResp?.summary || null,
     });
   } catch (err) {
     const status = err.response?.status || 502;
-    const body   = err.response?.data   || { error: 'Failed to submit report to Layer 3' };
-    res.status(status).json(body);
+    const rawBody = err.response?.data;
+
+    // Parse Pydantic 422 validation errors into a clean human-readable message
+    if (status === 422 && rawBody) {
+      const detail = rawBody.detail || rawBody;
+      // Pydantic v2 returns detail as array of {type, loc, msg, input, ctx}
+      if (Array.isArray(detail)) {
+        const messages = detail.map(e => {
+          const loc = Array.isArray(e.loc) ? e.loc.join(' → ') : String(e.loc || '');
+          const msg = e.msg || e.message || JSON.stringify(e);
+          return loc ? `${loc}: ${msg}` : msg;
+        });
+        return res.status(422).json({
+          error: 'Expense validation failed',
+          detail: messages.join('; '),
+          issues: messages,
+        });
+      }
+      // L3 custom error shape {code, message}
+      if (rawBody.code && rawBody.message) {
+        return res.status(status).json({ error: rawBody.message });
+      }
+    }
+
+    const errorMessage = rawBody?.error || rawBody?.detail || rawBody?.message
+      || 'Failed to submit report to Layer 3';
+    res.status(status).json({ error: typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage) });
   }
 });
 

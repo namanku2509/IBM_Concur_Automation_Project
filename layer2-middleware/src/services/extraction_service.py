@@ -275,20 +275,46 @@ def _extract_labelled_total(text: str) -> Optional[float]:
 
 
 def _all_amounts_in_text(text: str) -> list[float]:
-    """Return all distinct numeric amounts found in the OCR text."""
-    raw = re.findall(r"(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)", text, re.IGNORECASE)
-    if not raw:
-        raw = re.findall(r"\b(\d{3,7}(?:\.\d{1,2})?)\b", text)
+    """
+    Return all distinct monetary amounts found in the OCR text.
+    Only looks for amounts preceded by a currency marker (INR, Rs, ₹)
+    OR amounts that look like prices (reasonable range: 1–999999).
+    Explicitly filters out phone numbers, PIN codes, IDs, etc.
+    """
     result = []
     seen = set()
-    for r in raw:
+
+    # Priority: currency-prefixed amounts — most reliable
+    currency_matches = re.findall(
+        r"(?:INR|Rs\.?\s*|₹)\s*([\d,]+(?:\.\d{1,2})?)",
+        text, re.IGNORECASE
+    )
+    for r in currency_matches:
         try:
             v = float(r.replace(",", ""))
-            if v > 0 and v not in seen:
+            if 1.0 <= v <= 999999.0 and v not in seen:
                 seen.add(v)
                 result.append(v)
         except (ValueError, TypeError):
             continue
+
+    # If no currency-prefixed amounts found, fall back to plain numbers
+    # but filter out known non-amount patterns
+    if not result:
+        # Remove phone numbers, PIN codes, IDs before scanning
+        cleaned = re.sub(r"\b0\d{9,}\b", " ", text)       # phone: starts with 0, 10+ digits
+        cleaned = re.sub(r"\b\d{6,}\b", " ", cleaned)      # remove 6+ digit numbers (IDs, PINs)
+        cleaned = re.sub(r"\b\d{1,2}\b", " ", cleaned)     # remove 1-2 digit numbers (days, seats)
+        plain = re.findall(r"\b(\d{3,5}(?:\.\d{1,2})?)\b", cleaned)
+        for r in plain:
+            try:
+                v = float(r.replace(",", ""))
+                if 50.0 <= v <= 99999.0 and v not in seen:
+                    seen.add(v)
+                    result.append(v)
+            except (ValueError, TypeError):
+                continue
+
     return result
 
 

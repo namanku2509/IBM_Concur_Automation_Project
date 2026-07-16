@@ -3,13 +3,20 @@ Pipeline route — POST /pipeline/run
 
 Primary and only external entry point for Layer 1 (watsonx Orchestrate).
 Accepts a batch of PDF receipt files plus report context, runs the full
-5-stage pipeline on each file, and returns aggregated results.
+5-stage pipeline on each file in PARALLEL, and returns aggregated results.
 
-Registered as a watsonx Orchestrate skill via /openapi.json.
+Parallelism note:
+  All receipts are processed concurrently via asyncio.gather().
+  On a CPU-only VM this reduces total wall-clock time from (N × T) to
+  roughly T (time of the slowest single receipt) because OCR and LLM
+  calls are I/O-bound from asyncio's perspective.
+  A semaphore limits concurrency to MAX_CONCURRENT_RECEIPTS to prevent
+  OOM on low-RAM VMs.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Annotated
 
@@ -30,6 +37,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Pipeline"])
 
+# Max receipts to process concurrently — prevents OOM on 4GB RAM VMs
+# Docling loads a ~500MB model per worker; 3 concurrent = ~1.5GB
+MAX_CONCURRENT_RECEIPTS = 3
+
 
 @router.post(
     "/pipeline/run",
@@ -43,8 +54,8 @@ router = APIRouter(tags=["Pipeline"])
         "(3) intelligent field extraction grounded in the Layer 3 DB schema, "
         "(4) fuzzy matching against corporate card transactions from Layer 3, "
         "(5) payload translation and submission to Layer 3. "
-        "All receipts are processed individually; a failure on one file does not "
-        "abort the batch — the error is recorded in results and processing continues. "
+        "All receipts are processed in parallel (up to 3 at a time); a failure "
+        "on one file does not abort the batch. "
         "Set DRY_RUN=true in the environment to skip Layer 3 submission steps."
     ),
 )
@@ -62,173 +73,59 @@ async def run_pipeline(
         Form(description="Employee ID from Layer 3 (e.g. EMP001)"),
     ],
 ) -> PipelineResult:
-    """
-    Full batch receipt pipeline.
-
-    Each file is processed through:
-      Stage 1: OCR   (ocr_service)
-      Stage 2: Categorise  (categorisation_service)
-      Stage 3: Extract     (extraction_service)
-      Stage 4: Match       (matching_service)
-      Stage 5: Submit      (schema_mapper + concur_client)
-    """
     if not files:
         raise HTTPException(status_code=422, detail="At least one PDF file is required.")
 
-    # Validate all uploads are PDFs
     for upload in files:
         if upload.content_type not in ("application/pdf", "application/octet-stream"):
             if not (upload.filename or "").lower().endswith(".pdf"):
                 raise HTTPException(
                     status_code=422,
-                    detail=f"'{upload.filename}' does not appear to be a PDF. "
-                           "Only PDF receipts are accepted.",
+                    detail=f"'{upload.filename}' does not appear to be a PDF.",
                 )
 
-    # ── Import services here to avoid circular imports at module load ─────────
-    from src.services.ocr_service import extract_text
-    from src.services.categorisation_service import categorise
-    from src.services.extraction_service import extract
-    from src.services.matching_service import match
-    from src.services.schema_mapper import build_expense_input, build_receipt_register_request
-    from src.services.concur_client import register_receipt, fetch_available_transactions
-    from src import config
+    # Read all file bytes upfront (before async tasks, avoids stream exhaustion)
+    file_payloads: list[tuple[str, bytes]] = []
+    for upload in files:
+        filename = upload.filename or "unknown.pdf"
+        file_bytes = await upload.read()
+        file_payloads.append((filename, file_bytes))
 
-    results: list[ReceiptResult] = []
+    logger.info(
+        "Pipeline started | report=%s employee=%s files=%d (parallel, max %d)",
+        report_id, employee_id, len(file_payloads), MAX_CONCURRENT_RECEIPTS,
+    )
+
+    # Semaphore prevents more than MAX_CONCURRENT_RECEIPTS running at once
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_RECEIPTS)
+
+    async def process_one(filename: str, file_bytes: bytes) -> ReceiptResult:
+        async with semaphore:
+            return await _process_single_receipt(
+                filename, file_bytes, report_id, employee_id
+            )
+
+    # Run all receipts in parallel
+    results: list[ReceiptResult] = await asyncio.gather(
+        *[process_one(fn, fb) for fn, fb in file_payloads],
+        return_exceptions=False,
+    )
+
+    # Aggregate
     total_amount = 0.0
     matched_count = 0
     by_type: dict[str, int] = {}
 
-    for upload in files:
-        filename = upload.filename or "unknown.pdf"
-        logger.info("Processing receipt: %s", filename)
-
-        try:
-            file_bytes = await upload.read()
-
-            # ── Stage 1 — OCR ─────────────────────────────────────────────
-            ocr_result = await extract_text(file_bytes, filename)
-
-            # ── Stage 2 — Categorise ──────────────────────────────────────
-            cat_result = await categorise(ocr_result.raw_text)
-
-            # ── Stage 3 — Extract ─────────────────────────────────────────
-            extracted = await extract(ocr_result, cat_result)
-
-            # ── Stage 4 — Match ───────────────────────────────────────────
-            match_result = await match(extracted, employee_id, report_id)
-
-            # Update payment_type based on match outcome
-            if match_result.txn_id:
-                extracted.payment_type = "CORPORATE_CARD"
+    for r in results:
+        if r.status == "success":
+            total_amount += r.amount or 0.0
+            if r.matched_txn_id:
                 matched_count += 1
-
-            # ── Stage 5 — Register receipt with Layer 3 ───────────────────
-            receipt_id = None
-            warnings: list = []
-            dry_run = config.DRY_RUN
-
-            if not dry_run:
-                receipt_req = build_receipt_register_request(
-                    extracted, employee_id, filename
-                )
-                receipt_resp = await register_receipt(receipt_req)
-                receipt_id = receipt_resp.receipt_id
-
-            # ── Aggregate ─────────────────────────────────────────────────
-            total_amount += extracted.amount
-            exp_type = extracted.expense_type
-            by_type[exp_type] = by_type.get(exp_type, 0) + 1
-
-            date_str = (
-                extracted.transaction_date.isoformat()
-                if extracted.transaction_date else None
-            )
-
-            # ── Build type-specific detail sub-object for the response ────────
-            hotel_detail_result = None
-            airfare_detail_result = None
-            taxi_detail_result = None
-            meal_detail_result = None
-            registration_detail_result = None
-
-            if exp_type == "HOTEL" and extracted.hotel_detail:
-                hd = extracted.hotel_detail
-                hotel_detail_result = HotelDetailResult(
-                    check_in_date=hd.check_in_date.isoformat() if hd.check_in_date else None,
-                    check_out_date=hd.check_out_date.isoformat() if hd.check_out_date else None,
-                    num_nights=hd.num_nights,
-                    nightly_rate=hd.nightly_rate,
-                    tax_amount=hd.tax_amount,
-                )
-            elif exp_type == "FLIGHT" and extracted.airfare_detail:
-                ad = extracted.airfare_detail
-                airfare_detail_result = AirfareDetailResult(
-                    origin=ad.origin,
-                    destination=ad.destination,
-                    airline=ad.airline,
-                    ticket_number=ad.ticket_number,
-                    travel_class=ad.travel_class,
-                    passenger_name=ad.passenger_name,
-                )
-            elif exp_type == "TAXI" and extracted.taxi_detail:
-                td = extracted.taxi_detail
-                taxi_detail_result = TaxiDetailResult(
-                    from_location=td.from_location,
-                    to_location=td.to_location,
-                    distance_km=td.distance_km,
-                )
-            elif exp_type == "MEALS" and extracted.meal_detail:
-                md = extracted.meal_detail
-                meal_detail_result = MealDetailResult(
-                    meal_type=md.meal_type,
-                    num_attendees=md.num_attendees,
-                    business_justification=md.business_justification,
-                )
-            elif exp_type == "REGISTRATION" and extracted.registration_detail:
-                rd = extracted.registration_detail
-                registration_detail_result = RegistrationDetailResult(
-                    event_name=rd.event_name,
-                    event_date=rd.event_date.isoformat() if rd.event_date else None,
-                    registration_id=rd.registration_id,
-                    organiser=rd.organiser,
-                )
-
-            results.append(ReceiptResult(
-                filename=filename,
-                status="success",
-                expense_type=exp_type,
-                vendor=extracted.vendor,
-                amount=extracted.amount,
-                currency=extracted.currency,
-                transaction_date=date_str,
-                city=extracted.city,
-                payment_type=extracted.payment_type,
-                hotel_detail=hotel_detail_result,
-                airfare_detail=airfare_detail_result,
-                taxi_detail=taxi_detail_result,
-                meal_detail=meal_detail_result,
-                registration_detail=registration_detail_result,
-                matched_txn_id=match_result.txn_id,
-                match_confidence=match_result.confidence,
-                expense_id=receipt_id,
-                warnings=warnings,
-                ocr_engine=extracted.ocr_engine,
-                page_count=ocr_result.page_count,
-                file_hash=ocr_result.file_hash,
-                dry_run=dry_run,
-            ))
-
-        except Exception as exc:
-            logger.error("Failed to process '%s': %s", filename, exc, exc_info=True)
-            results.append(ReceiptResult(
-                filename=filename,
-                status="error",
-                error_message=str(exc),
-            ))
+            if r.expense_type:
+                by_type[r.expense_type] = by_type.get(r.expense_type, 0) + 1
 
     unmatched = sum(1 for r in results if r.status == "success" and not r.matched_txn_id)
-    errors = sum(1 for r in results if r.status == "error")
+    errors    = sum(1 for r in results if r.status == "error")
 
     return PipelineResult(
         report_id=report_id,
@@ -244,3 +141,136 @@ async def run_pipeline(
             by_type=by_type,
         ),
     )
+
+
+async def _process_single_receipt(
+    filename: str,
+    file_bytes: bytes,
+    report_id: str,
+    employee_id: str,
+) -> ReceiptResult:
+    """Process one receipt through all 5 pipeline stages. Never raises — errors are captured."""
+
+    from src.services.ocr_service import extract_text
+    from src.services.categorisation_service import categorise
+    from src.services.extraction_service import extract
+    from src.services.matching_service import match
+    from src.services.schema_mapper import build_receipt_register_request
+    from src.services.concur_client import register_receipt
+    from src import config
+
+    logger.info("Processing receipt: %s", filename)
+
+    try:
+        # Stage 1 — OCR
+        ocr_result = await extract_text(file_bytes, filename)
+
+        # Stage 2 — Categorise
+        cat_result = await categorise(ocr_result.raw_text)
+
+        # Stage 3 — Extract
+        extracted = await extract(ocr_result, cat_result)
+
+        # Stage 4 — Match
+        match_result = await match(extracted, employee_id, report_id)
+
+        if match_result.txn_id:
+            extracted.payment_type = "CORPORATE_CARD"
+
+        # Stage 5 — Register receipt
+        receipt_id = None
+        warnings: list = []
+        dry_run = config.DRY_RUN
+
+        if not dry_run:
+            receipt_req = build_receipt_register_request(extracted, employee_id, filename)
+            receipt_resp = await register_receipt(receipt_req)
+            receipt_id = receipt_resp.receipt_id
+
+        exp_type = extracted.expense_type
+        date_str = (
+            extracted.transaction_date.isoformat()
+            if extracted.transaction_date else None
+        )
+
+        # Build type-specific detail sub-objects
+        hotel_detail_result = None
+        airfare_detail_result = None
+        taxi_detail_result = None
+        meal_detail_result = None
+        registration_detail_result = None
+
+        if exp_type == "HOTEL" and extracted.hotel_detail:
+            hd = extracted.hotel_detail
+            hotel_detail_result = HotelDetailResult(
+                check_in_date=hd.check_in_date.isoformat() if hd.check_in_date else None,
+                check_out_date=hd.check_out_date.isoformat() if hd.check_out_date else None,
+                num_nights=hd.num_nights,
+                nightly_rate=hd.nightly_rate,
+                tax_amount=hd.tax_amount,
+            )
+        elif exp_type == "FLIGHT" and extracted.airfare_detail:
+            ad = extracted.airfare_detail
+            airfare_detail_result = AirfareDetailResult(
+                origin=ad.origin,
+                destination=ad.destination,
+                airline=ad.airline,
+                ticket_number=ad.ticket_number,
+                travel_class=ad.travel_class,
+                passenger_name=ad.passenger_name,
+            )
+        elif exp_type == "TAXI" and extracted.taxi_detail:
+            td = extracted.taxi_detail
+            taxi_detail_result = TaxiDetailResult(
+                from_location=td.from_location,
+                to_location=td.to_location,
+                distance_km=td.distance_km,
+            )
+        elif exp_type == "MEALS" and extracted.meal_detail:
+            md = extracted.meal_detail
+            meal_detail_result = MealDetailResult(
+                meal_type=md.meal_type,
+                num_attendees=md.num_attendees,
+                business_justification=md.business_justification,
+            )
+        elif exp_type == "REGISTRATION" and extracted.registration_detail:
+            rd = extracted.registration_detail
+            registration_detail_result = RegistrationDetailResult(
+                event_name=rd.event_name,
+                event_date=rd.event_date.isoformat() if rd.event_date else None,
+                registration_id=rd.registration_id,
+                organiser=rd.organiser,
+            )
+
+        return ReceiptResult(
+            filename=filename,
+            status="success",
+            expense_type=exp_type,
+            vendor=extracted.vendor,
+            amount=extracted.amount,
+            currency=extracted.currency,
+            transaction_date=date_str,
+            city=extracted.city,
+            payment_type=extracted.payment_type,
+            hotel_detail=hotel_detail_result,
+            airfare_detail=airfare_detail_result,
+            taxi_detail=taxi_detail_result,
+            meal_detail=meal_detail_result,
+            registration_detail=registration_detail_result,
+            matched_txn_id=match_result.txn_id,
+            match_confidence=match_result.confidence,
+            expense_id=receipt_id,
+            warnings=warnings,
+            ocr_engine=extracted.ocr_engine,
+            page_count=ocr_result.page_count,
+            file_hash=ocr_result.file_hash,
+            dry_run=dry_run,
+        )
+
+    except Exception as exc:
+        logger.error("Failed to process '%s': %s", filename, exc, exc_info=True)
+        return ReceiptResult(
+            filename=filename,
+            status="error",
+            error_message=str(exc),
+        )
