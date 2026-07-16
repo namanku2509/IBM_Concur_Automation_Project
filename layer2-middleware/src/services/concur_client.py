@@ -41,6 +41,18 @@ class ConcurClientError(Exception):
         super().__init__(f"Layer 3 error {status_code}: {detail}")
 
 
+class DuplicateReceiptError(Exception):
+    """
+    Raised when Layer 3 returns HTTP 409 on POST /receipts/register.
+    Carries the existing receipt_id so the pipeline can reuse it.
+    """
+
+    def __init__(self, existing_receipt_id: str, registered_at: str):
+        self.existing_receipt_id = existing_receipt_id
+        self.registered_at = registered_at
+        super().__init__(f"Duplicate receipt — existing id: {existing_receipt_id}")
+
+
 def _auth_headers() -> dict:
     """Return auth headers to include on every Layer 3 request."""
     headers = {}
@@ -77,6 +89,14 @@ async def register_receipt(
             url,
             json=payload.model_dump(mode="json", by_alias=True),
             headers=_auth_headers(),
+        )
+
+    # 409 = duplicate receipt — raise a typed error so the pipeline can handle it
+    if resp.status_code == 409:
+        data = resp.json()
+        raise DuplicateReceiptError(
+            existing_receipt_id=data.get("existingReceiptId", ""),
+            registered_at=data.get("registeredAt", ""),
         )
 
     _raise_for_status(resp)

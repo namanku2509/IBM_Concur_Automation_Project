@@ -59,7 +59,7 @@ class ReceiptResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     filename: str = Field(description="Original PDF filename")
-    status: Literal["success", "error"] = "success"
+    status: Literal["success", "error", "duplicate"] = "success"
 
     # ── Core expense fields ───────────────────────────────────────────────────
     # Accepts both "MEALS" (L2 internal) and "MEAL" (L3 enum) — BFF maps MEALS→MEAL before L3 submit
@@ -147,5 +147,6 @@ class PipelineResult(BaseModel):
     matched: int = Field(description="Number of receipts matched to a card transaction")
     unmatched: int = Field(description="Receipts with no card transaction match")
     errors: int = Field(default=0, description="Receipts that failed processing")
+    duplicates: int = Field(default=0, description="Receipts rejected as already uploaded")
     results: list[ReceiptResult]
     summary: PipelineSummary

@@ -89,3 +89,26 @@ class ReceiptResponse(ReceiptRegisterResponse):
     mime_type: Optional[str] = Field(default=None, alias="mimeType")
     ocr_confidence: Optional[float] = Field(default=None, alias="ocrConfidence")
     receipt_hash: str = Field(..., alias="receiptHash")
+
+
+class DuplicateReceiptResponse(BaseModel):
+    """
+    409 Conflict response body returned when a receipt with the same
+    SHA-256 hash has already been registered for this employee.
+    Layer 2 uses existing_receipt_id to skip re-processing and reuse
+    the previously registered receipt reference.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+
+    code: str = Field(default="DUPLICATE_RECEIPT", alias="code")
+    message: str = Field(
+        default="A receipt with this hash has already been registered.",
+        alias="message",
+    )
+    existing_receipt_id: str = Field(
+        ...,
+        alias="existingReceiptId",
+        description="The receipt ID from the original registration — reuse this.",
+    )
+    employee_id: str = Field(..., alias="employeeId")
+    registered_at: datetime = Field(..., alias="registeredAt")

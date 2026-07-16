@@ -12,6 +12,13 @@ Parallelism note:
   calls are I/O-bound from asyncio's perspective.
   A semaphore limits concurrency to MAX_CONCURRENT_RECEIPTS to prevent
   OOM on low-RAM VMs.
+
+Duplicate detection:
+  Within-batch duplicates (same file uploaded twice in one request) are
+  caught before any async work using a seen_hashes dict keyed on SHA-256.
+  Cross-batch duplicates (file uploaded in a previous request) are caught
+  by Layer 3 returning HTTP 409 on POST /receipts/register — the pipeline
+  catches DuplicateReceiptError and returns status="duplicate".
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ from src.models.pipeline_models import (
     RegistrationDetailResult,
     TaxiDetailResult,
 )
+from src.services.hash_service import compute_sha256
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +104,35 @@ async def run_pipeline(
         report_id, employee_id, len(file_payloads), MAX_CONCURRENT_RECEIPTS,
     )
 
+    # ── Within-batch duplicate detection ─────────────────────────────────────
+    # Hash every file now (cheap, synchronous) so we can short-circuit duplicates
+    # before spending Docling + Ollama time on them.
+    # seen_hashes: hash → (filename, index) of the first occurrence in this batch
+    seen_hashes: dict[str, tuple[str, int]] = {}
+    deduplicated_payloads: list[tuple[str, bytes]] = []
+    within_batch_duplicates: list[ReceiptResult] = []
+
+    for idx, (filename, file_bytes) in enumerate(file_payloads):
+        file_hash = compute_sha256(file_bytes)
+        if file_hash in seen_hashes:
+            original_filename, _ = seen_hashes[file_hash]
+            logger.warning(
+                "Within-batch duplicate | file=%s | identical to %s in this batch",
+                filename, original_filename,
+            )
+            within_batch_duplicates.append(ReceiptResult(
+                filename=filename,
+                status="duplicate",
+                file_hash=file_hash,
+                error_message=(
+                    f"This receipt is identical to '{original_filename}' "
+                    "which was already submitted in this batch."
+                ),
+            ))
+        else:
+            seen_hashes[file_hash] = (filename, idx)
+            deduplicated_payloads.append((filename, file_bytes))
+
     # Semaphore prevents more than MAX_CONCURRENT_RECEIPTS running at once
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_RECEIPTS)
 
@@ -109,11 +146,14 @@ async def run_pipeline(
                 filename, file_bytes, report_id, employee_id, claim_ledger
             )
 
-    # Run all receipts in parallel
-    results: list[ReceiptResult] = await asyncio.gather(
-        *[process_one(fn, fb) for fn, fb in file_payloads],
+    # Run all unique receipts in parallel
+    processed_results: list[ReceiptResult] = await asyncio.gather(
+        *[process_one(fn, fb) for fn, fb in deduplicated_payloads],
         return_exceptions=False,
     )
+
+    # Merge processed results + within-batch duplicates, preserving upload order
+    results: list[ReceiptResult] = list(processed_results) + within_batch_duplicates
 
     # Aggregate
     total_amount = 0.0
@@ -128,8 +168,9 @@ async def run_pipeline(
             if r.expense_type:
                 by_type[r.expense_type] = by_type.get(r.expense_type, 0) + 1
 
-    unmatched = sum(1 for r in results if r.status == "success" and not r.matched_txn_id)
-    errors    = sum(1 for r in results if r.status == "error")
+    unmatched   = sum(1 for r in results if r.status == "success" and not r.matched_txn_id)
+    errors      = sum(1 for r in results if r.status == "error")
+    duplicates  = sum(1 for r in results if r.status == "duplicate")
 
     return PipelineResult(
         report_id=report_id,
@@ -138,6 +179,7 @@ async def run_pipeline(
         matched=matched_count,
         unmatched=unmatched,
         errors=errors,
+        duplicates=duplicates,
         results=results,
         summary=PipelineSummary(
             total_amount=round(total_amount, 2),
@@ -161,7 +203,7 @@ async def _process_single_receipt(
     from src.services.extraction_service import extract
     from src.services.matching_service import match
     from src.services.schema_mapper import build_receipt_register_request
-    from src.services.concur_client import register_receipt
+    from src.services.concur_client import register_receipt, DuplicateReceiptError
     from src import config
 
     logger.info("Processing receipt: %s", filename)
@@ -182,15 +224,32 @@ async def _process_single_receipt(
         if match_result.txn_id:
             extracted.payment_type = "CORPORATE_CARD"
 
-        # Stage 5 — Register receipt
+        # Stage 5 — Register receipt (cross-batch duplicate check via Layer 3 409)
         receipt_id = None
         warnings: list = []
         dry_run = config.DRY_RUN
 
         if not dry_run:
             receipt_req = build_receipt_register_request(extracted, employee_id, filename)
-            receipt_resp = await register_receipt(receipt_req)
-            receipt_id = receipt_resp.receipt_id
+            try:
+                receipt_resp = await register_receipt(receipt_req)
+                receipt_id = receipt_resp.receipt_id
+            except DuplicateReceiptError as dup:
+                logger.warning(
+                    "Cross-batch duplicate | file=%s | existing_id=%s",
+                    filename, dup.existing_receipt_id,
+                )
+                return ReceiptResult(
+                    filename=filename,
+                    status="duplicate",
+                    file_hash=ocr_result.file_hash,
+                    expense_id=dup.existing_receipt_id,
+                    error_message=(
+                        "This receipt has already been uploaded and registered. "
+                        f"Existing receipt ID: {dup.existing_receipt_id}"
+                    ),
+                    dry_run=dry_run,
+                )
 
         exp_type = extracted.expense_type
         date_str = (

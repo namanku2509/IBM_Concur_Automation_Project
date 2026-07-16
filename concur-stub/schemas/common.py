@@ -122,6 +122,7 @@ class ErrorCode(str, Enum):
     ITEMIZATION_REQUIRED        = "ITEMIZATION_REQUIRED"
     AIRFARE_DETAIL_REQUIRED     = "AIRFARE_DETAIL_REQUIRED"
     INVALID_STATUS_TRANSITION   = "INVALID_STATUS_TRANSITION"
+    DUPLICATE_RECEIPT           = "DUPLICATE_RECEIPT"
 
 
 # ------------------------------------------------------------------ #

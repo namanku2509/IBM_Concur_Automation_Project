@@ -7,6 +7,11 @@ GET  /api/v4/receipts/{id}      — Retrieve registered receipt metadata
 The stub NEVER receives raw receipt images or binary data.
 Layer 2 (AI Middleware) retains all binary assets after OCR processing.
 Only structured metadata (hash, filename, MIME type, OCR confidence) is accepted.
+
+Duplicate detection:
+  If a receipt with the same SHA-256 hash is already registered for this
+  employee, the endpoint returns HTTP 409 Conflict with the existing
+  receiptId so Layer 2 can reuse it without re-processing.
 """
 
 from __future__ import annotations
@@ -19,7 +24,12 @@ from database import get_db
 from models.receipt import Receipt
 from repositories import employee_repo, receipt_repo
 from schemas.common import ErrorCode, ErrorResponse
-from schemas.receipt import ReceiptRegisterRequest, ReceiptRegisterResponse, ReceiptResponse
+from schemas.receipt import (
+    DuplicateReceiptResponse,
+    ReceiptRegisterRequest,
+    ReceiptRegisterResponse,
+    ReceiptResponse,
+)
 
 router = APIRouter(tags=["receipts"])
 
@@ -32,8 +42,14 @@ router = APIRouter(tags=["receipts"])
     description=(
         "Called by Layer 2 after OCR processing. "
         "Accepts only structured metadata — no binary data is accepted. "
-        "Returns a receiptId to include in the expense submission payload."
+        "Returns a receiptId to include in the expense submission payload. "
+        "Returns HTTP 409 if the same receipt (by SHA-256 hash) has already "
+        "been registered for this employee — Layer 2 should reuse the "
+        "existingReceiptId from the 409 body."
     ),
+    responses={
+        409: {"model": DuplicateReceiptResponse, "description": "Receipt already registered"},
+    },
 )
 def register_receipt(
     payload: ReceiptRegisterRequest,
@@ -46,6 +62,18 @@ def register_receipt(
             detail=ErrorResponse(
                 code=ErrorCode.EMPLOYEE_NOT_FOUND,
                 message=f"Employee {payload.employee_id!r} does not exist.",
+            ).model_dump(by_alias=True),
+        )
+
+    # ── Duplicate detection ───────────────────────────────────────────────────
+    existing = receipt_repo.find_by_hash(payload.receipt_hash, payload.employee_id, db)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=DuplicateReceiptResponse(
+                existingReceiptId=existing.id,
+                employeeId=existing.employee_id,
+                registeredAt=existing.registered_at,
             ).model_dump(by_alias=True),
         )
 
