@@ -227,14 +227,9 @@ def process_expenses(
                     field="itemization",
                     expense_index=idx,
                 ))
-        if expense.expense_type.value == "FLIGHT":
-            if not expense.airfare_detail:
-                preflight_errors.append(PreflightError(
-                    code=ErrorCode.AIRFARE_DETAIL_REQUIRED,
-                    message="FLIGHT expenses must include an 'airfareDetail' object.",
-                    field="airfareDetail",
-                    expense_index=idx,
-                ))
+        # NOTE: FLIGHT airfareDetail is intentionally NOT mandatory at pre-flight.
+        # The schema has all-default values so missing OCR fields won't cause 422.
+        # The BFF always sends an airfareDetail object (with UNKNOWN defaults) for FLIGHT.
 
     if preflight_errors:
         raise HTTPException(
@@ -557,7 +552,9 @@ def process_expenses(
     # ================================================================
     new_total = expense_report_repo.update_total(report_id, db)
 
-    final_status_value = "MANUAL_REVIEW" if report_level_warnings else "DRAFT"
+    # Include expense-level warnings in the MANUAL_REVIEW determination
+    has_any_warnings = bool(report_level_warnings) or any(p.warnings for p in processed)
+    final_status_value = "MANUAL_REVIEW" if has_any_warnings else "DRAFT"
     expense_report_repo.update_status(report_id, final_status_value, db)
 
     # Commit everything in one transaction

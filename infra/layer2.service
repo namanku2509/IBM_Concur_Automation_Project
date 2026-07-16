@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Middleware (Layer 2) — Docling OCR + Ollama LLM FastAPI
+After=network.target concur-stub.service
+
+[Service]
+User=itzuser
+WorkingDirectory=/home/itzuser/concur-from-github/layer2-middleware
+EnvironmentFile=/home/itzuser/concur-from-github/layer2-middleware/.env
+ExecStart=/home/itzuser/concur-from-github/layer2-middleware/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -34,7 +34,10 @@ export async function processReceipts(reportId, files) {
   const form = new FormData();
   Array.from(files).forEach(file => form.append('files', file));
   const response = await axios.post(`${BFF_BASE}/report/${reportId}/receipts`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    // 11 min — slightly longer than BFF's 10 min to Docling so BFF timeout error
+    // reaches the frontend first (rather than a raw network timeout).
+    timeout: 660000,
   });
   return response.data;
 }

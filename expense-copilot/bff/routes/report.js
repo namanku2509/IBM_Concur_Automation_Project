@@ -87,12 +87,15 @@ function toL3ExpenseInput(exp) {
     const checkIn  = hd.check_in_date  ?? hd.checkInDate  ?? input.transactionDate;
     const itemization = [];
     for (let i = 0; i < nights; i++) {
-      const d = new Date(checkIn);
-      d.setDate(d.getDate() + i);
+      // Guard against null/invalid dates — fall back to today if nothing was extracted
+      const baseRaw  = checkIn || new Date().toISOString().split('T')[0];
+      const baseDate = new Date(baseRaw);
+      const safeBase = isNaN(baseDate.getTime()) ? new Date() : baseDate;
+      safeBase.setDate(safeBase.getDate() + i);
       itemization.push({
-        nightDate: d.toISOString().split('T')[0],
+        nightDate: safeBase.toISOString().split('T')[0],
         roomRate:  rate,
-        taxes:     taxes / nights,
+        taxes:     parseFloat((taxes / nights).toFixed(2)),
       });
     }
     input.itemization = itemization;

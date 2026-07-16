@@ -1,0 +1,16 @@
+[Unit]
+Description=BFF Express.js Server (Layer 1)
+After=network.target concur-stub.service layer2.service
+
+[Service]
+User=itzuser
+WorkingDirectory=/home/itzuser/concur-from-github/expense-copilot/bff
+EnvironmentFile=/home/itzuser/concur-from-github/expense-copilot/bff/.env
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

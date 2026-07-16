@@ -62,7 +62,8 @@ class ReceiptResult(BaseModel):
     status: Literal["success", "error"] = "success"
 
     # ── Core expense fields ───────────────────────────────────────────────────
-    expense_type: Optional[Literal["HOTEL", "TAXI", "FLIGHT", "MEALS", "REGISTRATION"]] = None
+    # Accepts both "MEALS" (L2 internal) and "MEAL" (L3 enum) — BFF maps MEALS→MEAL before L3 submit
+    expense_type: Optional[Literal["HOTEL", "TAXI", "FLIGHT", "MEALS", "MEAL", "REGISTRATION"]] = None
     vendor: Optional[str] = None
     amount: Optional[float] = None
     currency: Optional[str] = None
