@@ -304,18 +304,32 @@ def _all_amounts_in_text(text: str) -> list[float]:
         # Remove phone numbers, PIN codes, IDs before scanning
         cleaned = re.sub(r"\b0\d{9,}\b", " ", text)       # phone: starts with 0, 10+ digits
         cleaned = re.sub(r"\b\d{6,}\b", " ", cleaned)      # remove 6+ digit numbers (IDs, PINs)
-        cleaned = re.sub(r"\b\d{1,2}\b", " ", cleaned)     # remove 1-2 digit numbers (days, seats)
-        plain = re.findall(r"\b(\d{3,5}(?:\.\d{1,2})?)\b", cleaned)
+        cleaned = re.sub(r"\b\d{1,3}\b", " ", cleaned)     # remove 1-3 digit numbers (days, seats, area codes)
+        # Also strip partial phone fragments like "0124" "6173" "838" from dashed numbers
+        cleaned = re.sub(r"\b\d{3,4}\b(?=[-\s]\d{4})", " ", cleaned)  # remove leading segments of dashed phones
+        plain = re.findall(r"\b(\d{4,5}(?:\.\d{1,2})?)\b", cleaned)   # minimum 4 digits for plain fallback
         for r in plain:
             try:
                 v = float(r.replace(",", ""))
-                if 50.0 <= v <= 99999.0 and v not in seen:
+                if 200.0 <= v <= 99999.0 and v not in seen:
                     seen.add(v)
                     result.append(v)
             except (ValueError, TypeError):
                 continue
 
     return result
+
+
+# Minimum plausible amounts per expense type (INR).
+# Prevents phone number fragments and noise from being accepted as valid totals.
+_MIN_AMOUNT_BY_TYPE: dict[str, float] = {
+    "FLIGHT":       500.0,   # cheapest Indian domestic ticket is ~₹1000+
+    "HOTEL":        500.0,   # cheapest hotel night ₹500+
+    "TAXI":          50.0,   # minimum cab fare
+    "MEALS":         30.0,   # minimum meal
+    "MEAL":          30.0,
+    "REGISTRATION": 100.0,
+}
 
 
 def _validate_amount_in_text(
@@ -328,11 +342,23 @@ def _validate_amount_in_text(
     If it doesn't (within 1% tolerance), fall back to the labelled total,
     then to the largest amount in text.
 
-    This guards against the LLM hallucinating or mixing up amounts from
-    different parts of a long receipt or across batch runs.
+    Also enforces a minimum plausible amount per expense type to reject
+    phone number fragments (e.g. 124 from 0124-6173838) being accepted.
     """
+    min_amount = _MIN_AMOUNT_BY_TYPE.get(expense_type, 30.0)
+
     if llm_amount is None or llm_amount <= 0:
         # LLM gave nothing useful — use labelled total or max
+        return _extract_labelled_total(ocr_text) or _extract_max_amount(ocr_text) or 0.0
+
+    # Sanity check: reject amounts below type-specific minimum — they are almost
+    # certainly noise (phone fragments, seat numbers, page numbers, etc.)
+    if llm_amount < min_amount:
+        logger.warning(
+            "Amount %.2f is below minimum %.2f for %s — treating as noise, "
+            "falling back to labelled total",
+            llm_amount, min_amount, expense_type,
+        )
         return _extract_labelled_total(ocr_text) or _extract_max_amount(ocr_text) or 0.0
 
     # Check if llm_amount is literally present in the OCR text (within 1%)

@@ -78,13 +78,15 @@ function toL3ExpenseInput(exp) {
     paymentType,
   };
 
-  // Build itemization for HOTEL
-  if (expenseType === 'HOTEL' && exp.hotelDetail) {
-    const hd = exp.hotelDetail;
-    const nights = hd.num_nights ?? hd.numNights ?? 1;
-    const rate   = hd.nightly_rate ?? hd.nightlyRate ?? (exp.amount / nights);
-    const taxes  = hd.tax_amount   ?? hd.taxAmount   ?? 0;
-    const checkIn  = hd.check_in_date  ?? hd.checkInDate  ?? input.transactionDate;
+  // Build itemization for HOTEL — ALWAYS send itemization, even when hotelDetail is null.
+  // L3 schema REQUIRES itemization for HOTEL (ITEMIZATION_REQUIRED pre-flight check).
+  // When hotelDetail is missing (OCR failed to extract dates), fall back to 1 night at full amount.
+  if (expenseType === 'HOTEL') {
+    const hd = exp.hotelDetail || {};
+    const nights  = hd.num_nights   ?? hd.numNights   ?? 1;
+    const rate    = hd.nightly_rate ?? hd.nightlyRate ?? exp.amount;
+    const taxes   = hd.tax_amount   ?? hd.taxAmount   ?? 0;
+    const checkIn = hd.check_in_date ?? hd.checkInDate ?? input.transactionDate;
     const itemization = [];
     for (let i = 0; i < nights; i++) {
       // Guard against null/invalid dates — fall back to today if nothing was extracted
@@ -101,21 +103,22 @@ function toL3ExpenseInput(exp) {
     input.itemization = itemization;
   }
 
-  // Build airfareDetail for FLIGHT
-  if (expenseType === 'FLIGHT' && exp.airfareDetail) {
-    const ad = exp.airfareDetail;
+  // Build airfareDetail for FLIGHT — ALWAYS send, even when L2 didn't extract fields.
+  // L3 accepts all-default values (origin/destination default to "UNKNOWN").
+  if (expenseType === 'FLIGHT') {
+    const ad = exp.airfareDetail || {};
     input.airfareDetail = {
       origin:       ad.origin       ?? 'UNKNOWN',
       destination:  ad.destination  ?? 'UNKNOWN',
-      travelClass:  ad.travel_class ?? ad.travelClass ?? 'ECONOMY',
+      travelClass:  ad.travel_class ?? ad.travelClass  ?? 'ECONOMY',
       flightNumber: ad.flight_number ?? ad.flightNumber ?? null,
       ticketNumber: ad.ticket_number ?? ad.ticketNumber ?? null,
     };
   }
 
-  // Build taxiDetail for TAXI
-  if (expenseType === 'TAXI' && exp.taxiDetail) {
-    const td = exp.taxiDetail;
+  // Build taxiDetail for TAXI — ALWAYS send with UNKNOWN defaults when L2 didn't extract locations.
+  if (expenseType === 'TAXI') {
+    const td = exp.taxiDetail || {};
     input.taxiDetail = {
       fromLocation: td.from_location ?? td.fromLocation ?? 'UNKNOWN',
       toLocation:   td.to_location   ?? td.toLocation   ?? 'UNKNOWN',
