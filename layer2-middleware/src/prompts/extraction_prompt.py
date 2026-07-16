@@ -64,14 +64,14 @@ _TAXI_SCHEMA = """{
 
 _FLIGHT_SCHEMA = """{
   "vendor":           "Airline name — IndiGo, Air India, Air India Express, SpiceJet, Vistara, etc.",
-  "amount":           "FINAL total ticket price actually charged. PRIORITY ORDER: (1) Look for 'TOTAL FARE', 'Total Fare', 'TOTAL AMOUNT', 'Amount Paid', 'Grand Total' label — use that exact value. (2) If no explicit total label, sum Base Fare + Taxes only. (3) NEVER pick a subtotal, base fare alone, or convenience fee alone. On IndiGo receipts 'TOTAL FARE' is the correct field. If Base Fare is 4200 and Taxes are 1300, TOTAL FARE is 5500 — use 5500.",
+  "amount":           "FINAL total ticket price actually charged. STRICT RULES: (1) Search for lines labelled 'TOTAL FARE', 'Total Fare', 'TOTAL AMOUNT', 'Amount Paid', 'Grand Total', 'Amount Due', 'Total Payable' — use THAT value. (2) If none of those labels exist, add Base Fare + Taxes + Fees to get the total. (3) NEVER return a PNR number, booking ID, seat number, or any number that is not a monetary amount. (4) NEVER return a number below INR 500 for a flight — minimum realistic airfare is INR 1000. (5) On IndiGo receipts the line labelled 'TOTAL FARE' is the correct field — it will be a 4-5 digit number like 5500. If you see Base Fare 4200 and Taxes 1300, the total is 5500.",
   "currency":         "3-letter ISO code — ₹ or INR = INR",
-  "transaction_date": "Date of travel (departure date) — YYYY-MM-DD. Look for departure date, travel date, or journey date.",
+  "transaction_date": "Date of travel (departure date) — YYYY-MM-DD. Look for departure date, travel date, or journey date. NOT the booking date.",
   "city":             "Full departure city name (not airport code). E.g. if origin is BLR, city is Bengaluru.",
   "origin":           "Origin as 'City Name (IATA)' format where possible, e.g. 'Bengaluru (BLR)'. If only city name is shown use that. If only IATA code is shown, expand it: BLR=Bengaluru, DEL=Delhi, BOM=Mumbai, CCU=Kolkata, MAA=Chennai, HYD=Hyderabad, IXR=Ranchi, AMD=Ahmedabad, GOI=Goa, COK=Kochi.",
   "destination":      "Destination as 'City Name (IATA)' format where possible. Apply same IATA expansion rules as origin.",
   "airline":          "Full airline name as printed on the ticket",
-  "ticket_number":    "PNR, booking reference, or e-ticket number — alphanumeric code on the ticket",
+  "ticket_number":    "PNR or booking reference code ONLY (e.g. 'ABC123', '6E-WX842') — NOT a ticket price, NOT a seat number.",
   "travel_class":     "Travel class — Economy, Business, or First. Default Economy if not shown.",
   "passenger_name":   "Full name of the passenger as printed on the ticket"
 }"""

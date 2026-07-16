@@ -99,10 +99,14 @@ async def run_pipeline(
     # Semaphore prevents more than MAX_CONCURRENT_RECEIPTS running at once
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_RECEIPTS)
 
+    # Shared claim ledger: prevents two receipts from matching the same card txn
+    from src.services.matching_service import _ClaimLedger
+    claim_ledger = _ClaimLedger()
+
     async def process_one(filename: str, file_bytes: bytes) -> ReceiptResult:
         async with semaphore:
             return await _process_single_receipt(
-                filename, file_bytes, report_id, employee_id
+                filename, file_bytes, report_id, employee_id, claim_ledger
             )
 
     # Run all receipts in parallel
@@ -148,6 +152,7 @@ async def _process_single_receipt(
     file_bytes: bytes,
     report_id: str,
     employee_id: str,
+    claim_ledger=None,
 ) -> ReceiptResult:
     """Process one receipt through all 5 pipeline stages. Never raises — errors are captured."""
 
@@ -171,8 +176,8 @@ async def _process_single_receipt(
         # Stage 3 — Extract
         extracted = await extract(ocr_result, cat_result)
 
-        # Stage 4 — Match
-        match_result = await match(extracted, employee_id, report_id)
+        # Stage 4 — Match (claim_ledger ensures exclusive assignment across batch)
+        match_result = await match(extracted, employee_id, report_id, claim_ledger)
 
         if match_result.txn_id:
             extracted.payment_type = "CORPORATE_CARD"

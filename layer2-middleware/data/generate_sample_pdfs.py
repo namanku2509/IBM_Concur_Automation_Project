@@ -24,12 +24,20 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     receipts = [
-        ("hotel_marriott.pdf", _hotel_content()),
-        ("taxi_ola.pdf", _taxi_content()),
-        ("flight_indigo.pdf", _flight_content()),
-        ("meals_restaurant.pdf", _meals_content()),
-        ("meals_conference.pdf", _conference_content()),
-        ("misc_pharmacy.pdf", _pharmacy_content()),
+        # Named to match the 6 EMP001 card transactions (CCT001–CCT006)
+        ("receipt_1_marriott_hotel_INR18000.pdf",  _hotel_marriott()),
+        ("receipt_2_indigo_flight_INR5500.pdf",    _flight_indigo()),
+        ("receipt_3_ola_cab_INR650.pdf",           _taxi_ola_650()),
+        ("receipt_4_fattybao_meal_INR950.pdf",     _meals_fattybao()),
+        ("receipt_5_ola_cab_INR720.pdf",           _taxi_ola_720()),
+        ("receipt_6_uber_cab_INR999.pdf",          _taxi_uber()),
+        # Extras kept for standalone testing
+        ("hotel_marriott.pdf",                     _hotel_marriott()),
+        ("taxi_ola.pdf",                           _taxi_ola_650()),
+        ("flight_indigo.pdf",                      _flight_indigo()),
+        ("meals_restaurant.pdf",                   _meals_fattybao()),
+        ("meals_conference.pdf",                   _conference_content()),
+        ("misc_pharmacy.pdf",                      _pharmacy_content()),
     ]
 
     for filename, lines in receipts:
@@ -50,108 +58,165 @@ def main() -> None:
     print(f"\nGenerated {len(receipts)} sample PDFs in {out_dir}")
 
 
-def _hotel_content():
+# ── CCT001 — Marriott Hotel INR 18,000 (Check-in 2026-07-20) ─────────────────
+def _hotel_marriott():
     return [
         "**MARRIOTT BENGALURU",
         "**No. 12, Vittal Mallya Road, Bengaluru 560001",
-        "Tel: +91-80-2214-9000",
+        "Tel: +91-80-2214-9000 | GSTIN: 29AAACM0025L1Z6",
         "",
         "FOLIO / TAX INVOICE",
-        "Invoice No : MBL-2026-00421",
-        "Guest Name : Rahul Sharma",
-        "Room No    : 412",
+        "Invoice No : MBL-2026-00842",
+        "Guest Name : Priya Sharma",
+        "Room No    : 1204",
         "",
-        "Check-in   : 2026-07-19",
-        "Check-out  : 2026-07-21",
+        "Check-in   : 2026-07-20",
+        "Check-out  : 2026-07-22",
         "No. of Nights : 2",
         "",
-        "Room Charges    : INR 4,500.00 / night",
-        "Room x 2 nights : INR 9,000.00",
-        "GST (12%)       : INR 1,080.00",
-        "Service Charge  : INR 450.00",
+        "Room Rate       : INR 8,000.00 per night",
+        "Room x 2 nights : INR 16,000.00",
+        "GST (12%)       : INR  1,920.00",
+        "Sundry Charges  : INR     80.00",
         "------------------------------",
-        "TOTAL PAYABLE   : INR 10,530.00",
+        "TOTAL PAYABLE   : INR 18,000.00",
         "",
-        "Payment Mode: Corporate Card",
-        "Card last 4 digits: 4242",
+        "Payment Mode : Corporate Card ****4242",
+        "City         : Bengaluru",
     ]
 
 
-def _taxi_content():
-    return [
-        "**OLA CABS",
-        "Ride Receipt",
-        "",
-        "Booking ID  : OLA-BLR-20260721-88421",
-        "Date        : 2026-07-21",
-        "Time        : 09:35 AM",
-        "",
-        "Pickup  : Marriott Bengaluru, Vittal Mallya Road",
-        "Drop    : Kempegowda International Airport",
-        "Distance: 38.4 km",
-        "",
-        "Base Fare   : INR 380.00",
-        "Toll        : INR 40.00",
-        "GST (5%)    : INR 21.00",
-        "------------------------------",
-        "TOTAL       : INR 441.00",
-        "",
-        "Payment: Corporate Card ****4242",
-    ]
-
-
-def _flight_content():
+# ── CCT002 — IndiGo Flight INR 5,500 (Travel date 2026-07-19) ────────────────
+def _flight_indigo():
     return [
         "**IndiGo",
         "e-Ticket / Booking Confirmation",
         "",
-        "PNR            : 6E-WX842",
-        "Ticket Number  : 423-1234567890",
-        "Booking Date   : 2026-07-15",
+        "PNR            : FXBGH2",
+        "Booking Ref    : 6E-20260719-001",
+        "Booking Date   : 2026-07-10",
         "",
-        "Passenger      : SHARMA/RAHUL MR",
-        "Flight         : 6E 501",
+        "Passenger      : SHARMA/PRIYA MS",
+        "Flight         : 6E 204",
         "From           : BLR (Bengaluru)",
-        "To             : BOM (Mumbai)",
-        "Date           : 21 Jul 2026",
-        "Departure      : 11:40",
-        "Arrival        : 13:15",
-        "Seat           : 14C",
+        "To             : DEL (New Delhi)",
+        "Travel Date    : 19 Jul 2026",
+        "Departure      : 06:20",
+        "Arrival        : 09:05",
+        "Seat           : 24A",
         "Class          : Economy",
         "",
-        "Base Fare      : INR 3,200.00",
-        "Taxes & Fees   : INR 680.00",
+        "Base Fare      : INR 4,200.00",
+        "Taxes & Fees   : INR 1,300.00",
         "------------------------------",
-        "TOTAL          : INR 3,880.00",
+        "TOTAL FARE     : INR 5,500.00",
         "",
         "Payment: Corporate Card ****4242",
+        "City: Bengaluru",
     ]
 
 
-def _meals_content():
+# ── CCT003 — Ola Cab INR 650 (Date 2026-07-20) ────────────────────────────────
+def _taxi_ola_650():
     return [
-        "**MAINLAND CHINA",
-        "No. 8, Residency Road, Bengaluru",
-        "GSTIN: 29ABCDE1234F1Z5",
+        "**OLA CABS",
+        "Ride Receipt",
         "",
-        "Table : 12  |  Covers: 3",
-        "Date  : 2026-07-20",
-        "Time  : 8:45 PM",
+        "Booking ID  : OLA-BLR-20260720-44123",
+        "Date        : 2026-07-20",
+        "Time        : 09:10 AM",
         "",
-        "Veg Spring Roll (2)       :  INR 320",
-        "Kung Pao Chicken          :  INR 540",
-        "Steamed Rice (3)          :  INR 240",
-        "Mocktails (3)             :  INR 510",
+        "Pickup  : Kempegowda International Airport, Bengaluru",
+        "Drop    : Marriott Hotel, Vittal Mallya Road, Bengaluru",
+        "Distance: 42.3 km",
+        "",
+        "Base Fare   : INR 590.00",
+        "Toll        : INR 45.00",
+        "GST (5%)    : INR 15.00",
         "------------------------------",
-        "Sub Total                 : INR 1,610",
-        "GST (5%)                  :   INR  80",
-        "Service Charge (10%)      :  INR 161",
-        "------------------------------",
-        "TOTAL                     : INR 1,851",
+        "TOTAL       : INR 650.00",
         "",
         "Payment: Corporate Card ****4242",
-        "Business Purpose: Team dinner - client meeting",
+        "City: Bengaluru",
     ]
+
+
+# ── CCT004 — The Fatty Bao INR 950 (Date 2026-07-21) ─────────────────────────
+def _meals_fattybao():
+    return [
+        "**The Fatty Bao",
+        "No. 4, Wood Street, Bengaluru 560025",
+        "GSTIN: 29AABCF5678G1Z9",
+        "",
+        "Table : 7  |  Covers: 2",
+        "Date  : 2026-07-21",
+        "Time  : 8:30 PM",
+        "",
+        "Steamed Pork Baos (2)     : INR 380",
+        "Asian Slaw Salad          : INR 280",
+        "House Cocktails (2)       : INR 180",
+        "------------------------------",
+        "Sub Total                 : INR 840",
+        "GST (5%)                  : INR  42",
+        "Service Charge (8%)       : INR  68",
+        "------------------------------",
+        "TOTAL                     : INR 950",
+        "",
+        "Payment: Corporate Card ****4242",
+        "City: Bengaluru",
+        "Business Purpose: Client dinner",
+    ]
+
+
+# ── CCT005 — Ola Cab INR 720 (Date 2026-07-22) ────────────────────────────────
+def _taxi_ola_720():
+    return [
+        "**OLA CABS",
+        "Ride Receipt",
+        "",
+        "Booking ID  : OLA-BLR-20260722-99812",
+        "Date        : 2026-07-22",
+        "Time        : 04:45 AM",
+        "",
+        "Pickup  : Marriott Hotel, Vittal Mallya Road, Bengaluru",
+        "Drop    : Kempegowda International Airport, Bengaluru",
+        "Distance: 43.1 km",
+        "",
+        "Base Fare   : INR 645.00",
+        "GST (5%)    : INR  32.00",
+        "Toll        : INR  43.00",
+        "------------------------------",
+        "TOTAL       : INR 720.00",
+        "",
+        "Payment: Corporate Card ****4242",
+        "City: Bengaluru",
+    ]
+
+
+# ── CCT006 — Uber Cab INR 999 (Date 2026-07-21) ───────────────────────────────
+def _taxi_uber():
+    return [
+        "**Uber",
+        "Trip Receipt",
+        "",
+        "Trip Date   : 2026-07-21",
+        "Trip Time   : 3:15 PM",
+        "Service     : Uber Go",
+        "",
+        "Pickup  : Indiranagar, Bengaluru",
+        "Drop    : MG Road, Bengaluru",
+        "Distance: 8.6 km",
+        "",
+        "Base Fare      : INR 899.00",
+        "Booking Fee    : INR  50.00",
+        "GST (5%)       : INR  50.00",
+        "------------------------------",
+        "TOTAL          : INR 999.00",
+        "",
+        "Payment: Corporate Card ****4242",
+        "City: Bengaluru",
+    ]
+
 
 
 def _conference_content():

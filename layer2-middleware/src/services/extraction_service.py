@@ -92,7 +92,6 @@ def _build_extracted_expense(
     # text (within 1%). If it doesn't, fall back to the labelled-total extractor.
     amount = _validate_amount_in_text(raw_amount, ocr_result.raw_text, expense_type)
     currency = _str_or_none(parsed.get("currency")) or "INR"
-    transaction_date = _parse_date(parsed.get("transaction_date"))
     city = _str_or_none(parsed.get("city"))
 
     hotel_detail = airfare_detail = taxi_detail = meal_detail = registration_detail = None
@@ -122,7 +121,27 @@ def _build_extracted_expense(
             nightly_rate=nightly_rate,
             tax_amount=_safe_float(parsed.get("tax_amount"), default=0.0),
         )
-    elif expense_type == "FLIGHT":
+
+        # For HOTEL: transaction_date = check-in date (matches when card is charged).
+        # Using check-out date creates a 2-3 day delta vs the card transaction date,
+        # which tanks the date score in the matcher.
+        transaction_date = check_in or _parse_date(parsed.get("transaction_date"))
+    else:
+        transaction_date = _parse_date(parsed.get("transaction_date"))
+
+    if expense_type == "FLIGHT":
+        # For FLIGHT: force labelled-total extraction as a hard guard.
+        # The LLM frequently picks a ticket number digit (e.g. 124 from "423-1234567890")
+        # instead of the actual fare. Re-run labelled extractor and take whichever is larger
+        # as long as a labelled total exists.
+        labelled = _extract_labelled_total(ocr_result.raw_text)
+        if labelled and labelled > amount:
+            logger.info(
+                "FLIGHT: labelled total %.2f > LLM amount %.2f — using labelled total",
+                labelled, amount,
+            )
+            amount = labelled
+
         airfare_detail = AirfareDetail(
             origin=_str_or_none(parsed.get("origin")),
             destination=_str_or_none(parsed.get("destination")),
@@ -248,27 +267,40 @@ def _extract_max_amount(text: str) -> Optional[float]:
 def _extract_labelled_total(text: str) -> Optional[float]:
     """
     Extract the amount next to an explicit total label.
-    Checks for common total labels in priority order:
-      TOTAL FARE, TOTAL AMOUNT DUE, TOTAL AMOUNT, GRAND TOTAL,
-      AMOUNT PAID, AMOUNT DUE, TOTAL BILL, TOTAL:
-    Returns the FIRST labelled total found (most specific wins).
+    Priority-ordered: first match wins. Patterns ordered from most specific
+    to least specific so 'TOTAL FARE' beats a bare 'TOTAL:'.
+
+    Returns the FIRST labelled total found, or None.
     """
-    # Priority patterns — ordered from most to least specific
+    # Currency-prefixed amount pattern (handles INR 5,500.00 and plain 5500)
+    _AMT = r"(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)"
+
+    # Priority patterns — most specific first
     patterns = [
-        r"TOTAL\s+FARE\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
-        r"TOTAL\s+AMOUNT\s+DUE\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
-        r"TOTAL\s+AMOUNT\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
-        r"GRAND\s+TOTAL\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
-        r"AMOUNT\s+PAID\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
-        r"AMOUNT\s+DUE\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
-        r"TOTAL\s+BILL\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
-        r"(?:^|\n)\s*TOTAL\s*[:\-]\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+        # Flight-specific (IndiGo, SpiceJet, Air India)
+        r"TOTAL\s+FARE\s*[:\-]?\s*" + _AMT,
+        r"TOTAL\s+AMOUNT\s+CHARGED\s*[:\-]?\s*" + _AMT,
+        r"TOTAL\s+AMOUNT\s+DUE\s*[:\-]?\s*" + _AMT,
+        r"TOTAL\s+AMOUNT\s+PAYABLE\s*[:\-]?\s*" + _AMT,
+        r"TOTAL\s+PAYABLE\s*[:\-]?\s*" + _AMT,
+        # Generic totals
+        r"TOTAL\s+AMOUNT\s*[:\-]?\s*" + _AMT,
+        r"GRAND\s+TOTAL\s*[:\-]?\s*" + _AMT,
+        r"AMOUNT\s+PAID\s*[:\-]?\s*" + _AMT,
+        r"AMOUNT\s+DUE\s*[:\-]?\s*" + _AMT,
+        r"TOTAL\s+BILL\s*[:\-]?\s*" + _AMT,
+        r"BOOKING\s+(?:AMOUNT|VALUE)\s*[:\-]?\s*" + _AMT,
+        r"NET\s+PAYABLE\s*[:\-]?\s*" + _AMT,
+        # Bare TOTAL: — least specific, must be on its own line or after newline
+        r"(?:^|\n)\s*TOTAL\s*[:\-]\s*" + _AMT,
     ]
     for pattern in patterns:
         m = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
         if m:
             try:
-                return float(m.group(1).replace(",", ""))
+                val = float(m.group(1).replace(",", ""))
+                if val > 0:
+                    return val
             except (ValueError, TypeError):
                 continue
     return None
@@ -323,12 +355,12 @@ def _all_amounts_in_text(text: str) -> list[float]:
 # Minimum plausible amounts per expense type (INR).
 # Prevents phone number fragments and noise from being accepted as valid totals.
 _MIN_AMOUNT_BY_TYPE: dict[str, float] = {
-    "FLIGHT":       500.0,   # cheapest Indian domestic ticket is ~₹1000+
-    "HOTEL":        500.0,   # cheapest hotel night ₹500+
-    "TAXI":          50.0,   # minimum cab fare
-    "MEALS":         30.0,   # minimum meal
-    "MEAL":          30.0,
-    "REGISTRATION": 100.0,
+    "FLIGHT":       1000.0,  # cheapest Indian domestic ticket is ~₹1200+
+    "HOTEL":         500.0,  # cheapest hotel night ₹500+
+    "TAXI":           50.0,  # minimum cab fare
+    "MEALS":          30.0,  # minimum meal
+    "MEAL":           30.0,
+    "REGISTRATION":  100.0,
 }
 
 
