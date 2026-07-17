@@ -74,7 +74,7 @@ def register_receipt(
                 existingReceiptId=existing.id,
                 employeeId=existing.employee_id,
                 registeredAt=existing.registered_at,
-            ).model_dump(by_alias=True),
+            ).model_dump(by_alias=True, mode="json"),
         )
 
     receipt = Receipt(

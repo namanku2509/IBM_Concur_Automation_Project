@@ -35,9 +35,11 @@ function WarningsList({ warnings }) {
 
   const normalised = warnings.map(normaliseWarning);
 
-  // Deduplicate by code
+  // Deduplicate by code+message (same message for same code is truly a duplicate;
+  // different messages with the same code, e.g. multiple RECEIPT_PROCESSING_FAILED,
+  // should each be shown)
   const unique = normalised.filter(
-    (w, i, arr) => arr.findIndex(x => x.code === w.code) === i
+    (w, i, arr) => arr.findIndex(x => x.code === w.code && x.message === w.message) === i
   );
 
   return (

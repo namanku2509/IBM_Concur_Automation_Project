@@ -13,7 +13,7 @@ function matchIntent(text) {
   if (t.match(/\b(help|how|what)\b/))
     return 'I can help you file your expenses. Upload your receipts and I will extract, match, and validate them automatically.';
   if (t.match(/\b(submit|send|done|finish)\b/))
-    return 'Once your receipts are processed, click the Submit Report button at the bottom to send to SAP Concur.';
+    return 'Once your receipts are processed, click the Submit Expense Report button at the bottom to submit your claim.';
   if (t.match(/\b(warning|policy|limit)\b/))
     return 'Policy warnings do not block submission — they are informational. Errors (in red) must be resolved first.';
   if (t.match(/\b(match|transaction|card)\b/))

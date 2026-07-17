@@ -61,7 +61,7 @@ function AvailableExpensesTable({ transactions, loading, error }) {
   }));
 
   return (
-    <Tile style={{ padding: 0, overflow: 'hidden' }}>
+    <Tile className="available-expenses-tile" style={{ padding: 0, overflow: 'hidden' }}>
       <DataTable rows={rows} headers={HEADERS} size="sm">
         {({ rows, headers, getTableProps, getHeaderProps, getRowProps }) => (
           <Table {...getTableProps()}>

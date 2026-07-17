@@ -12,6 +12,7 @@ import ReceiptUploadArea from '../components/ReceiptUploadArea';
 import ProcessedExpensesTable from '../components/ProcessedExpensesTable';
 import WarningsList from '../components/WarningsList';
 import ChatPanel from '../components/ChatPanel';
+import SubmitConfirmModal from '../components/SubmitConfirmModal';
 
 import {
   getTransactions,
@@ -40,12 +41,12 @@ const CATEGORY_LABELS = {
 
 // ── Pipeline steps definition ────────────────────────────────────────────────
 const PIPELINE_STEPS = [
-  { id: 'CREATE',       label: 'Report Created',              desc: 'Shell report registered in SAP Concur' },
-  { id: 'TXN_FETCH',    label: 'Card Transactions Loaded',    desc: 'Corporate card feed fetched from Concur' },
+  { id: 'CREATE',       label: 'Report Created',              desc: 'Shell report registered in the system' },
+  { id: 'TXN_FETCH',    label: 'Card Transactions Loaded',    desc: 'Corporate card feed fetched' },
   { id: 'OCR',          label: 'OCR Processing',              desc: 'Docling extracts text from PDF receipts' },
   { id: 'AI_EXTRACT',   label: 'AI Field Extraction',         desc: 'Ollama LLM extracts vendor, amount, date' },
   { id: 'MATCHING',     label: 'Transaction Matching',        desc: 'Fuzzy match receipts to card transactions' },
-  { id: 'SUBMIT',       label: 'Submitted to Concur',         desc: 'Expense report posted and locked' },
+  { id: 'SUBMIT',       label: 'Submitted',                   desc: 'Expense report posted and locked' },
 ];
 
 // step status: 'idle' | 'active' | 'done' | 'error'
@@ -103,10 +104,12 @@ function ReportFolderPage() {
   const [processedExpenses,  setProcessedExpenses]  = useState([]);
   const [warnings,           setWarnings]           = useState([]);
   const [processing,         setProcessing]         = useState(false);
+  const [processingCash,     setProcessingCash]     = useState(false);
   const [submitting,         setSubmitting]         = useState(false);
   const [submitError,        setSubmitError]        = useState(null);
   const [confirmation,       setConfirmation]       = useState(null);
   const [chatMessages,       setChatMessages]       = useState([]);
+  const [showModal,          setShowModal]          = useState(false);
 
   // ── Pipeline tracker state ─────────────────────────────────────────────────
   const [stepStatuses, setStepStatuses] = useState({
@@ -124,11 +127,11 @@ function ReportFolderPage() {
   }
 
   // ── Chat helper ───────────────────────────────────────────────────────────
-  const addAgentMessage = useCallback(text => {
-    setChatMessages(prev => [
-      ...prev,
-      { from: 'agent', text, ts: new Date().toLocaleTimeString() }
-    ]);
+  const addAgentMessage = useCallback(message => {
+    const entry = typeof message === 'string'
+      ? { from: 'agent', text: message, ts: new Date().toLocaleTimeString() }
+      : message;
+    setChatMessages(prev => [...prev, entry]);
   }, []);
 
   // ── Step 2: Load transactions on mount ───────────────────────────────────
@@ -195,7 +198,7 @@ function ReportFolderPage() {
         addAgentMessage('AI extraction complete ✅ — Matching receipts to corporate card transactions…');
       }, Math.max(files.length * perReceiptMs * 0.85, 10000));
 
-      const data = await processReceipts(reportId, files);
+      const data = await processReceipts(reportId, files, 'card');
 
       clearTimeout(ocrTimer);
       clearTimeout(aiTimer);
@@ -205,26 +208,54 @@ function ReportFolderPage() {
       const matched   = data.matched   ?? expenses.filter(e => e.matchedTxnId).length;
       const total     = data.processed ?? expenses.length;
 
-      setProcessedExpenses(expenses);
+      const successExpenses = expenses
+        .filter(e => e.status !== 'error' && e.status !== 'duplicate')
+        .map(e => ({ ...e, fromCashZone: false }));
+      const wrongBoxErrors  = expenses.filter(e => e.status === 'error' && (
+        e.errorMessage?.includes('Cash payment') || e.errorMessage?.includes('Out-of-Pocket')
+      ));
+      const ocrFailures     = expenses.filter(e => e.status === 'error' && !wrongBoxErrors.includes(e));
+      // Merge card results with existing cash expenses — never wipe fromCashZone entries
+      setProcessedExpenses(prev => {
+        const cashExpenses = prev.filter(e => e.fromCashZone);
+        return [...cashExpenses, ...successExpenses];
+      });
       setWarnings(allWarns);
-      setMatchStats({ matched, total });
-      setFolderStatus('REVIEW');
+      // Only update match stats when there are actual card-zone successes to show
+      if (successExpenses.length > 0) {
+        setMatchStats({ matched, total: successExpenses.length });
+        setFolderStatus('REVIEW');
+      } else {
+        setFolderStatus(prev => (prev === 'REVIEW' ? 'REVIEW' : 'EXPENSES_LOADED'));
+      }
 
-      // Mark all processing steps done
-      setStep('OCR',        'done');
-      setStep('AI_EXTRACT', 'done');
-      setStep('MATCHING',   'done');
+      const allFailed = expenses.length > 0 && successExpenses.length === 0;
+      setStep('OCR',        allFailed ? 'error' : 'done');
+      setStep('AI_EXTRACT', allFailed ? 'idle'  : 'done');
+      setStep('MATCHING',   allFailed ? 'idle'  : 'done');
 
-      const warnCount = allWarns.length;
-      addAgentMessage(
-        `Processing complete ✅\n` +
-        `• ${total} receipt${total !== 1 ? 's' : ''} processed\n` +
-        `• ${matched} of ${total} matched to corporate card\n` +
-        (warnCount > 0
-          ? `• ⚠️ ${warnCount} policy warning${warnCount !== 1 ? 's' : ''} — review before submitting`
-          : `• No policy violations found`)
-      );
+      const policyWarnCount = allWarns.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length;
+      const lines = [
+        `Processing complete${allFailed ? ' with errors' : ' ✅'}`,
+        `• ${total} receipt${total !== 1 ? 's' : ''} submitted`,
+      ];
+      if (wrongBoxErrors.length > 0)
+        lines.push(`• ❌ ${wrongBoxErrors.length} receipt${wrongBoxErrors.length !== 1 ? 's' : ''} rejected — contains a Cash payment, use the Cash Receipts drop box`);
+      if (ocrFailures.length > 0)
+        lines.push(`• ❌ ${ocrFailures.length} receipt${ocrFailures.length !== 1 ? 's' : ''} could not be read by OCR — PDF may be a scanned image`);
+      if (successExpenses.length > 0)
+        lines.push(`• ${matched} of ${successExpenses.length} matched to corporate card`);
+      if (policyWarnCount > 0)
+        lines.push(`• ⚠️ ${policyWarnCount} policy warning${policyWarnCount !== 1 ? 's' : ''} — review before submitting`);
+      else if (successExpenses.length > 0)
+        lines.push('• No policy violations found');
+      addAgentMessage(lines.join('\n'));
     } catch (err) {
+      // 409 = all files already added to this report
+      if (err.response?.status === 409) {
+        addAgentMessage(`ℹ️ ${err.response.data?.error || 'These receipts have already been added to this report.'}`);
+        return;
+      }
       setStep('OCR',        'error');
       setStep('AI_EXTRACT', 'idle');
       setStep('MATCHING',   'idle');
@@ -239,15 +270,86 @@ function ReportFolderPage() {
     }
   }
 
+  // ── Cash receipts: same pipeline, results appended, no card match expected ──
+  async function handleCashUpload(files) {
+    setProcessingCash(true);
+    setSubmitError(null);
+
+    const count = files.length;
+    addAgentMessage(
+      `Sending ${count} cash receipt${count !== 1 ? 's' : ''} for processing…\n` +
+      `These will be added as out-of-pocket expenses (no card match required).`
+    );
+
+    try {
+      const data = await processReceipts(reportId, files, 'cash');
+
+      const expenses = data.expenses || [];
+      const allWarns = data.warnings || [];
+
+      const successExpenses = expenses
+        .filter(e => e.status !== 'error' && e.status !== 'duplicate')
+        .map(e => ({ ...e, fromCashZone: true }));
+
+      // Append to existing processed expenses — deduplicate by fileHash.
+      // Keep the state updater pure (no side-effects inside it).
+      setProcessedExpenses(prev => {
+        const existingHashes = new Set(prev.map(e => e.fileHash).filter(Boolean));
+        const newExpenses = successExpenses.filter(e => !e.fileHash || !existingHashes.has(e.fileHash));
+        return [...prev, ...newExpenses];
+      });
+      // Set folder status separately — never call setState inside another setState updater
+      if (successExpenses.length > 0) setFolderStatus('REVIEW');
+      setWarnings(prev => [...prev, ...allWarns]);
+
+      const wrongBoxErrors = expenses.filter(e => e.status === 'error' && (
+        e.errorMessage?.includes('Corporate Card') || e.errorMessage?.includes('Cash payment')
+      ));
+      const ocrFailures2 = expenses.filter(e => e.status === 'error' && !wrongBoxErrors.includes(e));
+
+      const lines = [
+        `Cash receipt processing complete${(ocrFailures2.length + wrongBoxErrors.length) > 0 ? ' with errors' : ' ✅'}`,
+        `• ${successExpenses.length} expense${successExpenses.length !== 1 ? 's' : ''} added as out-of-pocket`,
+      ];
+      if (wrongBoxErrors.length > 0)
+        lines.push(`• ❌ ${wrongBoxErrors.length} receipt${wrongBoxErrors.length !== 1 ? 's' : ''} rejected — contains a Corporate Card payment, use the Card Receipts drop box`);
+      if (ocrFailures2.length > 0)
+        lines.push(`• ❌ ${ocrFailures2.length} receipt${ocrFailures2.length !== 1 ? 's' : ''} could not be read by OCR — PDF may be a scanned image`);
+      if (successExpenses.length === 0 && wrongBoxErrors.length === 0 && ocrFailures2.length === 0)
+        lines.push('• All receipts extracted successfully');
+      addAgentMessage(lines.join('\n'));
+    } catch (err) {
+      // 409 = all files already added to this report
+      if (err.response?.status === 409) {
+        addAgentMessage(`ℹ️ ${err.response.data?.error || 'These receipts have already been added to this report.'}`);
+        return;
+      }
+      const isTimeout = err.code === 'ECONNABORTED' || err.message?.includes('timeout');
+      const msg = isTimeout
+        ? `Request timed out. Try uploading fewer receipts at a time.`
+        : (err.response?.data?.error || err.response?.data?.detail || 'Receipt processing failed.');
+      addAgentMessage(`❌ Cash receipt processing failed: ${msg}`);
+    } finally {
+      setProcessingCash(false);
+    }
+  }
+
   // ── Step 6: Submit ────────────────────────────────────────────────────────
-  async function handleSubmit() {
+  // "Submit" button opens the confirmation modal.
+  // The actual API call fires only when the employee clicks Confirm in the modal.
+  function handleSubmitClick() {
+    setShowModal(true);
+  }
+
+  async function handleSubmit(justifications = {}) {
+    setShowModal(false);
     setSubmitting(true);
     setSubmitError(null);
     setStep('SUBMIT', 'active');
-    addAgentMessage('Submitting expense report to SAP Concur stub…');
+    addAgentMessage('Submitting expense report…');
 
     try {
-      const data = await submitReport(reportId);
+      const data = await submitReport(reportId, justifications);
       setConfirmation(data);
       setFolderStatus('SUBMITTED');
       setStep('SUBMIT', 'done');
@@ -268,8 +370,13 @@ function ReportFolderPage() {
     }
   }
 
-  const hasErrors = warnings.some(w => w.severity === 'ERROR');
-  const canSubmit = folderStatus === 'REVIEW' && !hasErrors && !submitting;
+  // Only policy-level errors (not OCR failures) block submission.
+  // OCR failures are surfaced as informational warnings; the successfully
+  // extracted expenses can still be submitted.
+  const hasPolicyErrors = warnings.some(
+    w => w.severity === 'ERROR' && w.code !== 'RECEIPT_PROCESSING_FAILED'
+  );
+  const canSubmit = folderStatus === 'REVIEW' && !hasPolicyErrors && !submitting;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -348,14 +455,33 @@ function ReportFolderPage() {
           />
         </div>
 
-        {/* Receipt upload */}
+        {/* Corporate card receipt upload */}
         {folderStatus !== 'SUBMITTED' && (
           <div className="receipt-upload-section">
-            <p className="section-heading">Upload PDF Receipts</p>
+            <p className="section-heading">
+              Upload Corporate Card Receipts
+              <span className="section-count"> — matched to card transactions automatically</span>
+            </p>
             <ReceiptUploadArea
               onUpload={handleUpload}
               processing={processing}
               disabled={txnLoading || folderStatus === 'SUBMITTED'}
+            />
+          </div>
+        )}
+
+        {/* Cash / out-of-pocket receipt upload */}
+        {folderStatus !== 'SUBMITTED' && (
+          <div className="receipt-upload-section">
+            <p className="section-heading">
+              Upload Cash / Out-of-Pocket Receipts
+              <span className="section-count"> — added as personal expenses, no card match needed</span>
+            </p>
+            <ReceiptUploadArea
+              onUpload={handleCashUpload}
+              processing={processingCash}
+              disabled={txnLoading || folderStatus === 'SUBMITTED'}
+              variant="cash"
             />
           </div>
         )}
@@ -366,17 +492,25 @@ function ReportFolderPage() {
             <p className="section-heading">
               Processed Expenses
               <span className="section-count">
-                &nbsp;({processedExpenses.filter(e => e.matchedTxnId).length}/{processedExpenses.length} matched to card)
+                &nbsp;({processedExpenses.filter(e => e.matchedTxnId).length} card
+                {' · '}
+                {processedExpenses.filter(e => e.fromCashZone).length} cash
+                {' of '}
+                {processedExpenses.length} total)
               </span>
             </p>
             <ProcessedExpensesTable expenses={processedExpenses} />
           </div>
         )}
 
-        {/* Policy warnings */}
+        {/* Policy warnings and OCR errors */}
         {warnings.length > 0 && (
           <div className="warnings-section">
-            <p className="section-heading">Policy Warnings ({warnings.length})</p>
+            <p className="section-heading">
+              {warnings.some(w => w.code === 'RECEIPT_PROCESSING_FAILED') && warnings.every(w => w.code === 'RECEIPT_PROCESSING_FAILED')
+                ? `Receipt Errors (${warnings.length})`
+                : `Warnings (${warnings.length})`}
+            </p>
             <WarningsList warnings={warnings} />
           </div>
         )}
@@ -385,17 +519,17 @@ function ReportFolderPage() {
         {folderStatus !== 'SUBMITTED' && processedExpenses.length > 0 && (
           <div className="submit-bar">
             <p className="submit-bar-info">
-              {hasErrors
-                ? '⛔ Fix the errors above before submitting.'
-                : warnings.length > 0
-                ? `⚠️ ${warnings.length} warning${warnings.length !== 1 ? 's' : ''} — you can still submit.`
+              {hasPolicyErrors
+                ? '⛔ Fix the policy errors above before submitting.'
+                : warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length > 0
+                ? `⚠️ ${warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length} policy warning${warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length !== 1 ? 's' : ''} — you can still submit.`
                 : '✅ All checks passed. Ready to submit.'}
             </p>
             <Button kind="secondary" onClick={() => navigate('/')} disabled={submitting}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={!canSubmit}>
-              {submitting ? 'Submitting…' : 'Submit to SAP Concur'}
+            <Button onClick={handleSubmitClick} disabled={!canSubmit}>
+              {submitting ? 'Submitting…' : 'Submit Expense Report'}
             </Button>
           </div>
         )}
@@ -404,6 +538,19 @@ function ReportFolderPage() {
 
       {/* ── Chat panel ── */}
       <ChatPanel messages={chatMessages} onMessage={addAgentMessage} folderStatus={folderStatus} />
+
+      {/* ── Submit confirmation modal ── */}
+      {showModal && (
+        <SubmitConfirmModal
+          meta={meta}
+          expenses={processedExpenses}
+          warnings={warnings}
+          policy={meta.policy || 'STANDARD'}
+          onConfirm={handleSubmit}
+          onCancel={() => setShowModal(false)}
+          submitting={submitting}
+        />
+      )}
 
     </div>
   );

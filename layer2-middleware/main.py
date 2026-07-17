@@ -18,7 +18,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.routes import health, pipeline
+from src.routes import health, pipeline, debug
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log_level = os.getenv("LOG_LEVEL", "info").upper()
@@ -62,6 +62,7 @@ app.add_middleware(
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(health.router)
 app.include_router(pipeline.router)
+app.include_router(debug.router)
 
 
 # ── Startup log ───────────────────────────────────────────────────────────────

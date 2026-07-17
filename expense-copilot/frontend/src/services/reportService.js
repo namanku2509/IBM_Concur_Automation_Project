@@ -30,9 +30,10 @@ export async function getTransactions(reportId) {
  * @param {FileList} files
  * @returns {Object} - { processed, matched, unmatched, expenses[], warnings[] }
  */
-export async function processReceipts(reportId, files) {
+export async function processReceipts(reportId, files, paymentHint = 'card') {
   const form = new FormData();
   Array.from(files).forEach(file => form.append('files', file));
+  form.append('paymentHint', paymentHint);
   const response = await axios.post(`${BFF_BASE}/report/${reportId}/receipts`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     // 11 min — slightly longer than BFF's 10 min to Docling so BFF timeout error
@@ -47,8 +48,11 @@ export async function processReceipts(reportId, files) {
  * @param {string} reportId
  * @returns {Object} - { status, confirmationId, warnings[] }
  */
-export async function submitReport(reportId) {
-  const response = await axios.post(`${BFF_BASE}/report/${reportId}/submit`);
+export async function submitReport(reportId, policyJustifications = {}) {
+  const response = await axios.post(
+    `${BFF_BASE}/report/${reportId}/submit`,
+    { policyJustifications },
+  );
   return response.data;
 }
 

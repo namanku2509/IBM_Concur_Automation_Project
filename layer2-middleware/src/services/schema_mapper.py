@@ -91,10 +91,11 @@ def build_expense_input(
 
     elif expense_type == "FLIGHT" and extracted.airfare_detail:
         ad = extracted.airfare_detail
+        raw_class = getattr(ad, "travel_class", None) or "ECONOMY"
         airfare_detail = AirfareDetailInput(
             origin=ad.origin,
             destination=ad.destination,
-            travelClass=getattr(ad, "travel_class", None) or "ECONOMY",
+            travelClass=raw_class.upper(),
             flightNumber=getattr(ad, "flight_number", None),
             ticketNumber=ad.ticket_number,
         )
@@ -109,8 +110,12 @@ def build_expense_input(
 
     elif expense_type == "MEAL" and extracted.meal_detail:
         md = extracted.meal_detail
+        raw_meal_type = (md.meal_type or "MEAL").upper()
+        # Map to Layer 3 accepted values: BREAKFAST, LUNCH, DINNER, SNACK, MEAL
+        _VALID_MEAL_TYPES = {"BREAKFAST", "LUNCH", "DINNER", "SNACK", "MEAL"}
+        meal_type = raw_meal_type if raw_meal_type in _VALID_MEAL_TYPES else "MEAL"
         meal_detail = MealDetailInput(
-            mealType=md.meal_type or "MEAL",
+            mealType=meal_type,
             attendees=md.num_attendees or 1,
         )
 

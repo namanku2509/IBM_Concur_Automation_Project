@@ -28,6 +28,16 @@ function ProcessedExpensesTable({ expenses }) {
     const hasVendor = e.vendor && e.vendor.trim();
     const ocrOk     = hasAmount && hasVendor;
 
+    // Determine payment label:
+    //   matched to card txn            → CARD
+    //   came from cash drop zone       → CASH
+    //   card zone, no match found      → UNMATCHED
+    const matchLabel = e.matchedTxnId
+      ? 'CARD'
+      : e.fromCashZone
+        ? 'CASH'
+        : 'UNMATCHED';
+
     return {
       id:              e.expenseId || String(i),
       expenseType:     e.expenseType   || '—',
@@ -36,13 +46,13 @@ function ProcessedExpensesTable({ expenses }) {
         ? `${e.currency || 'INR'} ${Number(e.amount).toLocaleString('en-IN')}`
         : '₹ 0',
       transactionDate: e.transactionDate || '—',
-      matchStatus:     e.matchedTxnId ? 'MATCHED' : 'UNMATCHED',
+      matchStatus:     matchLabel,
       ocrStatus:       ocrOk ? 'OK' : 'FAILED',
     };
   });
 
   return (
-    <Tile style={{ padding: 0, overflow: 'hidden' }}>
+    <Tile className="processed-expenses-tile" style={{ padding: 0, overflow: 'hidden' }}>
       <DataTable rows={rows} headers={HEADERS} size="sm">
         {({ rows, headers, getTableProps, getHeaderProps, getRowProps }) => (
           <Table {...getTableProps()}>
@@ -61,7 +71,10 @@ function ProcessedExpensesTable({ expenses }) {
                   {row.cells.map(cell => (
                     <TableCell key={cell.id}>
                       {cell.info.header === 'matchStatus' ? (
-                        <Tag type={cell.value === 'MATCHED' ? 'green' : 'red'} size="sm">
+                        <Tag
+                          type={cell.value === 'CARD' ? 'green' : cell.value === 'CASH' ? 'teal' : 'red'}
+                          size="sm"
+                        >
                           {cell.value}
                         </Tag>
                       ) : cell.info.header === 'ocrStatus' ? (

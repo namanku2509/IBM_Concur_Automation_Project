@@ -31,9 +31,23 @@ function create(reportId, fields) {
     createdAt: new Date().toISOString(),
     availableExpenses: [],
     processedExpenses: [],
-    warnings: []
+    warnings: [],
+    processedHashes: new Set(),   // tracks file hashes already accepted into this report
   };
   return store[reportId];
+}
+
+/** Check if a file hash is already registered for this report. */
+function hasHash(reportId, fileHash) {
+  const folder = store[reportId];
+  if (!folder || !fileHash) return false;
+  return folder.processedHashes.has(fileHash);
+}
+
+/** Register a file hash so subsequent uploads of the same file are rejected. */
+function addHash(reportId, fileHash) {
+  const folder = store[reportId];
+  if (folder && fileHash) folder.processedHashes.add(fileHash);
 }
 
 function get(reportId) {
@@ -50,4 +64,4 @@ function setStatus(reportId, status) {
   return update(reportId, { status });
 }
 
-module.exports = { create, get, update, setStatus };
+module.exports = { create, get, update, setStatus, hasHash, addHash };

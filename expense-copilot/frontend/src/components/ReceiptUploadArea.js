@@ -3,7 +3,8 @@ import { Tag, Loading } from '@carbon/react';
 import { Upload } from '@carbon/icons-react';
 import './ReceiptUploadArea.css';
 
-function ReceiptUploadArea({ onUpload, processing, disabled }) {
+function ReceiptUploadArea({ onUpload, processing, disabled, variant }) {
+  const isCash = variant === 'cash';
   const inputRef = useRef(null);
 
   function handleFiles(files) {
@@ -23,16 +24,16 @@ function ReceiptUploadArea({ onUpload, processing, disabled }) {
 
   if (processing) {
     return (
-      <div className="upload-area upload-area--processing">
+      <div className={`upload-area upload-area--processing${isCash ? ' upload-area--cash' : ''}`}>
         <Loading small withOverlay={false} />
-        <span>Processing your receipts with AI…</span>
+        <span>{isCash ? 'Processing cash receipts with AI…' : 'Processing your receipts with AI…'}</span>
       </div>
     );
   }
 
   return (
     <div
-      className={`upload-area ${disabled ? 'upload-area--disabled' : ''}`}
+      className={`upload-area ${isCash ? 'upload-area--cash' : ''} ${disabled ? 'upload-area--disabled' : ''}`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onClick={() => !disabled && inputRef.current?.click()}
@@ -50,11 +51,11 @@ function ReceiptUploadArea({ onUpload, processing, disabled }) {
         onChange={e => handleFiles(e.target.files)}
       />
       <Upload size={32} className="upload-icon" />
-      <p className="upload-title">Drop receipts here or click to upload</p>
+      <p className="upload-title">{isCash ? 'Drop cash receipts here or click to upload' : 'Drop receipts here or click to upload'}</p>
       <p className="upload-hint">Accepted: PDF only</p>
       <div className="upload-tags">
-        <Tag type="blue" size="sm">Multiple files supported</Tag>
-        <Tag type="blue" size="sm">AI will extract and match automatically</Tag>
+        <Tag type={isCash ? 'teal' : 'blue'} size="sm">Multiple files supported</Tag>
+        <Tag type={isCash ? 'teal' : 'blue'} size="sm">{isCash ? 'Added as out-of-pocket expense' : 'AI will extract and match automatically'}</Tag>
       </div>
     </div>
   );

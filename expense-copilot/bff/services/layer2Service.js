@@ -7,10 +7,11 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { LAYER2_BASE_URL } = require('../config');
 
-async function processReceipts(reportId, employeeId, files) {
+async function processReceipts(reportId, employeeId, files, paymentHint = 'card') {
   const form = new FormData();
   form.append('report_id', reportId);
   form.append('employee_id', employeeId);
+  form.append('payment_hint', paymentHint);
 
   files.forEach(file => {
     form.append('files', file.buffer, {

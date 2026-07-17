@@ -256,69 +256,98 @@ def _parse_date(val) -> Optional[date]:
 
 
 def _extract_max_amount(text: str) -> Optional[float]:
-    amounts = re.findall(r"(?:₹|Rs\.?\s?|INR\s?)(\d[\d,]*(?:\.\d{1,2})?)", text)
+    # Handle "₹ 8,311" (space after ₹), "INR 5,500", "Rs. 273.86"
+    amounts = re.findall(r"(?:₹\s*|Rs\.?\s*|INR\s*)(\d[\d,]*(?:\.\d{1,2})?)", text, re.IGNORECASE)
     if not amounts:
         amounts = re.findall(r"\b(\d{3,6}(?:\.\d{1,2})?)\b", text)
     if not amounts:
         return None
-    return max(float(a.replace(",", "")) for a in amounts)
+    vals = []
+    for a in amounts:
+        try:
+            vals.append(float(a.replace(",", "")))
+        except (ValueError, TypeError):
+            pass
+    return max(vals) if vals else None
 
 
 def _extract_labelled_total(text: str) -> Optional[float]:
     """
     Extract the amount next to an explicit total label.
-    Priority-ordered: first match wins. Patterns ordered from most specific
-    to least specific so 'TOTAL FARE' beats a bare 'TOTAL:'.
+    Handles three formats real receipts use:
+      1. Plain text:  "TOTAL FARE: INR 5,500"
+      2. Markdown table cell: "| Total | Total | ₹273.86 |"
+      3. Currency symbol immediately before number: "Grand Total ₹29353"
 
-    Returns the FIRST labelled total found, or None.
+    Priority-ordered: first match wins (most specific first).
+    Returns the first valid positive amount found, or None.
     """
-    # Currency-prefixed amount pattern (handles INR 5,500.00 and plain 5500)
-    _AMT = r"(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)"
+    # Currency prefix — covers real symbols + common OCR misreads of ₹ (R, Rs, INR)
+    _CUR = r"(?:INR\s*|Rs\.?\s*|₹\s*|R\s+)"
 
     # Priority patterns — most specific first
     patterns = [
-        # Flight-specific (IndiGo, SpiceJet, Air India)
-        r"TOTAL\s+FARE\s*[:\-]?\s*" + _AMT,
-        r"TOTAL\s+AMOUNT\s+CHARGED\s*[:\-]?\s*" + _AMT,
-        r"TOTAL\s+AMOUNT\s+DUE\s*[:\-]?\s*" + _AMT,
-        r"TOTAL\s+AMOUNT\s+PAYABLE\s*[:\-]?\s*" + _AMT,
-        r"TOTAL\s+PAYABLE\s*[:\-]?\s*" + _AMT,
+        # Flight-specific
+        rf"TOTAL\s+FARE\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"TOTAL\s+AMOUNT\s+CHARGED\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"TOTAL\s+AMOUNT\s+DUE\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"TOTAL\s+AMOUNT\s+PAYABLE\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"TOTAL\s+PAYABLE\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
         # Generic totals
-        r"TOTAL\s+AMOUNT\s*[:\-]?\s*" + _AMT,
-        r"GRAND\s+TOTAL\s*[:\-]?\s*" + _AMT,
-        r"AMOUNT\s+PAID\s*[:\-]?\s*" + _AMT,
-        r"AMOUNT\s+DUE\s*[:\-]?\s*" + _AMT,
-        r"TOTAL\s+BILL\s*[:\-]?\s*" + _AMT,
-        r"BOOKING\s+(?:AMOUNT|VALUE)\s*[:\-]?\s*" + _AMT,
-        r"NET\s+PAYABLE\s*[:\-]?\s*" + _AMT,
-        # Bare TOTAL: — least specific, must be on its own line or after newline
-        r"(?:^|\n)\s*TOTAL\s*[:\-]\s*" + _AMT,
+        rf"TOTAL\s+AMOUNT\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"GRAND\s+TOTAL\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"AMOUNT\s+PAID\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"AMOUNT\s+DUE\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"TOTAL\s+BILL\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"BOOKING\s+(?:AMOUNT|VALUE)\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"NET\s+PAYABLE\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"INVOICE\s+TOTAL\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"ORDER\s+TOTAL\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"BILL\s+AMOUNT\s*[:\|]?\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        # Markdown table cell: "| TOTAL | | | R 714.00 |" or "| Total | ₹273.86 |"
+        rf"\|\s*TOTAL\s*\|[^\|]*\|[^\|]*\|\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)\s*\|",
+        rf"\|\s*Total\s*\|\s*Total\s*\|\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
+        rf"\|\s*Total\s*\|\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)\s*\|",
+        # Markdown table cell: "| Invoice Total | | 285.13 |"
+        rf"\|\s*Invoice\s+Total\s*\|[^\|]*\|\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)\s*\|",
+        rf"\|\s*Order\s+Total\s*\|[^\|]*\|\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)\s*\|",
+        # "## Total Amount" heading followed by amount on next line
+        rf"#+\s*Total\s+Amount\s*\n+[^\n]*?{_CUR}([\d,]+(?:\.\d{{1,2}})?)",
+        rf"#+\s*Total\s+Amount\s*\n+{_CUR}([\d,]+(?:\.\d{{1,2}})?)",
+        # Currency symbol directly before number (e.g. "Grand Total ₹29353" or "TOTAL R 714")
+        rf"(?:total|payable|amount|fare|bill|charges?)\b[^₹\d\n]{{0,30}}{_CUR}([\d,]+(?:\.\d{{1,2}})?)",
+        # Bare TOTAL: on its own line
+        rf"(?:^|\n)\s*TOTAL\s*[:\-]\s*{_CUR}?([\d,]+(?:\.\d{{1,2}})?)",
     ]
+
+    best: Optional[float] = None
     for pattern in patterns:
         m = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
         if m:
             try:
                 val = float(m.group(1).replace(",", ""))
                 if val > 0:
+                    # Return on first specific match
                     return val
             except (ValueError, TypeError):
                 continue
-    return None
+
+    return best
 
 
 def _all_amounts_in_text(text: str) -> list[float]:
     """
     Return all distinct monetary amounts found in the OCR text.
-    Only looks for amounts preceded by a currency marker (INR, Rs, ₹)
-    OR amounts that look like prices (reasonable range: 1–999999).
+    Handles plain text, markdown table cells, and ₹-prefixed amounts.
     Explicitly filters out phone numbers, PIN codes, IDs, etc.
     """
     result = []
     seen = set()
 
     # Priority: currency-prefixed amounts — most reliable
+    # Also handles ₹273.86 inside markdown table cells
     currency_matches = re.findall(
-        r"(?:INR|Rs\.?\s*|₹)\s*([\d,]+(?:\.\d{1,2})?)",
+        r"(?:INR\s*|Rs\.?\s*|₹\s*)([\d,]+(?:\.\d{1,2})?)",
         text, re.IGNORECASE
     )
     for r in currency_matches:
@@ -333,8 +362,11 @@ def _all_amounts_in_text(text: str) -> list[float]:
     # If no currency-prefixed amounts found, fall back to plain numbers
     # but filter out known non-amount patterns
     if not result:
+        # Strip slash-delimited reference IDs like "SBK/260719/0847" before any scanning
+        # so embedded numbers don't get picked up as amounts
+        cleaned = re.sub(r"[A-Z0-9]+(?:/[A-Z0-9]+){1,}", " ", text)
         # Remove phone numbers, PIN codes, IDs before scanning
-        cleaned = re.sub(r"\b0\d{9,}\b", " ", text)       # phone: starts with 0, 10+ digits
+        cleaned = re.sub(r"\b0\d{9,}\b", " ", cleaned)     # phone: starts with 0, 10+ digits
         cleaned = re.sub(r"\b\d{6,}\b", " ", cleaned)      # remove 6+ digit numbers (IDs, PINs)
         cleaned = re.sub(r"\b\d{1,3}\b", " ", cleaned)     # remove 1-3 digit numbers (days, seats, area codes)
         # Also strip partial phone fragments like "0124" "6173" "838" from dashed numbers

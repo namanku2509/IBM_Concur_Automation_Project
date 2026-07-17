@@ -92,11 +92,16 @@ async def register_receipt(
         )
 
     # 409 = duplicate receipt — raise a typed error so the pipeline can handle it
+    # FastAPI wraps HTTPException bodies inside a "detail" key, so the actual
+    # DuplicateReceiptResponse fields are at data["detail"], not data directly.
     if resp.status_code == 409:
         data = resp.json()
+        body = data.get("detail", data)   # unwrap FastAPI envelope if present
+        if isinstance(body, str):
+            body = data                   # plain string detail — fall back to root
         raise DuplicateReceiptError(
-            existing_receipt_id=data.get("existingReceiptId", ""),
-            registered_at=data.get("registeredAt", ""),
+            existing_receipt_id=body.get("existingReceiptId", ""),
+            registered_at=body.get("registeredAt", ""),
         )
 
     _raise_for_status(resp)

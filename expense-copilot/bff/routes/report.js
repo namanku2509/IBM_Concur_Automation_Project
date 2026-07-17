@@ -27,6 +27,7 @@ function normaliseExpense(r) {
   return {
     filename:        r.filename,
     status:          r.status,
+    errorMessage:    r.error_message ?? r.errorMessage ?? null,
     expenseType:     r.expense_type    ?? r.expenseType,
     vendor:          r.vendor,
     amount:          r.amount,
@@ -107,10 +108,12 @@ function toL3ExpenseInput(exp) {
   // L3 accepts all-default values (origin/destination default to "UNKNOWN").
   if (expenseType === 'FLIGHT') {
     const ad = exp.airfareDetail || {};
+    const rawClass = (ad.travel_class ?? ad.travelClass ?? 'ECONOMY').toUpperCase();
+    const validClasses = ['ECONOMY', 'BUSINESS', 'FIRST'];
     input.airfareDetail = {
       origin:       ad.origin       ?? 'UNKNOWN',
       destination:  ad.destination  ?? 'UNKNOWN',
-      travelClass:  ad.travel_class ?? ad.travelClass  ?? 'ECONOMY',
+      travelClass:  validClasses.includes(rawClass) ? rawClass : 'ECONOMY',
       flightNumber: ad.flight_number ?? ad.flightNumber ?? null,
       ticketNumber: ad.ticket_number ?? ad.ticketNumber ?? null,
     };
@@ -129,8 +132,10 @@ function toL3ExpenseInput(exp) {
   // Build mealDetail for MEAL
   if (expenseType === 'MEAL' && exp.mealDetail) {
     const md = exp.mealDetail;
+    const rawMealType = (md.meal_type ?? md.mealType ?? 'MEAL').toUpperCase();
+    const validMealTypes = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK', 'MEAL'];
     input.mealDetail = {
-      mealType:  md.meal_type   ?? md.mealType   ?? 'MEAL',
+      mealType:  validMealTypes.includes(rawMealType) ? rawMealType : 'MEAL',
       attendees: md.num_attendees ?? md.attendees ?? 1,
     };
   }
@@ -254,17 +259,81 @@ router.post('/:reportId/receipts', upload.array('files'), async (req, res) => {
     return res.status(422).json({ error: 'No receipt files provided' });
   }
 
+  // ── BFF-level duplicate detection ────────────────────────────────────────
+  // Hash every uploaded file and reject any that were already processed in
+  // this report session, regardless of which drop zone they came from.
+  const crypto = require('crypto');
+  const duplicateFilenames = [];
+  const uniqueFiles = [];
+  for (const file of files) {
+    const hash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+    if (reportStore.hasHash(folder.reportId, hash)) {
+      duplicateFilenames.push(file.originalname);
+    } else {
+      file._sha256 = hash;   // stash for registration after success
+      uniqueFiles.push(file);
+    }
+  }
+
+  if (uniqueFiles.length === 0) {
+    return res.status(409).json({
+      error: `All ${files.length} receipt${files.length !== 1 ? 's' : ''} have already been added to this report.`,
+      duplicates: duplicateFilenames,
+    });
+  }
+
   reportStore.setStatus(folder.reportId, 'PROCESSING');
 
   try {
-    const data = await layer2.processReceipts(folder.reportId, folder.employeeId, files);
+    // paymentHint comes from the frontend form field — 'card' or 'cash'
+    const paymentHint = req.body?.paymentHint || 'card';
+    const data = await layer2.processReceipts(folder.reportId, folder.employeeId, uniqueFiles, paymentHint);
 
     // Layer 2 returns results[] not expenses[]
     const rawResults = data.results || data.expenses || [];
-    const processedExpenses = rawResults.map(normaliseExpense);
+    const processedExpenses = rawResults.map(normaliseExpense).map(e => {
+      // Downgrade a "success" result that has no usable fields — the LLM and
+      // heuristic both failed to extract anything meaningful. Treat it as an
+      // error so a blank row never appears in the expenses table.
+      if (
+        e.status === 'success' &&
+        (!e.amount || Number(e.amount) <= 0) &&
+        (!e.vendor || !String(e.vendor).trim())
+      ) {
+        return {
+          ...e,
+          status: 'error',
+          errorMessage: e.errorMessage || 'Could not extract expense fields from this receipt (amount and vendor missing). The PDF may be a scanned image or the text is not machine-readable.',
+        };
+      }
+      return e;
+    });
 
-    // Collect all per-result warnings
-    const allWarnings = processedExpenses.flatMap(e => e.warnings || []);
+    // Register hashes for every successfully processed receipt so they can't
+    // be re-uploaded in a subsequent card or cash drop zone call.
+    for (const file of uniqueFiles) {
+      const result = rawResults.find(r => r.filename === file.originalname);
+      if (result && result.status === 'success') {
+        reportStore.addHash(folder.reportId, file._sha256);
+      }
+    }
+
+    // Build warnings — include duplicate-skipped notice if any
+    const allWarnings = [
+      ...processedExpenses.flatMap(e => e.warnings || []),
+      ...processedExpenses
+        .filter(e => e.status === 'error')
+        .map(e => ({
+          code: 'RECEIPT_PROCESSING_FAILED',
+          severity: 'ERROR',
+          message: `${e.filename}: ${e.errorMessage || 'Layer 2 could not process this receipt.'}`,
+        })),
+      ...duplicateFilenames.map(name => ({
+        code: 'DUPLICATE_RECEIPT',
+        severity: 'WARNING',
+        message: `${name}: Already added to this report — skipped.`,
+      })),
+    ];
 
     reportStore.update(folder.reportId, {
       processedExpenses,
@@ -306,6 +375,10 @@ router.post('/:reportId/submit', async (req, res) => {
     return res.status(409).json({ error: 'Report already submitted', reportId: folder.reportId });
   }
 
+  // Policy exception justifications supplied by the employee in the confirmation modal.
+  // Keyed as "expenseIndex-checkIndex" → free-text reason.
+  const policyJustifications = req.body?.policyJustifications || {};
+
   const expenses = (folder.processedExpenses || [])
     .filter(e => e.status !== 'error')
     .filter(e => e.amount && e.amount > 0)   // skip zero-amount receipts — L3 rejects amount=0
@@ -331,8 +404,9 @@ router.post('/:reportId/submit', async (req, res) => {
     const submitResp = await layer3.submitReport(folder.reportId);
 
     reportStore.update(folder.reportId, {
-      status:      'SUBMITTED',
-      submittedAt: new Date().toISOString(),
+      status:               'SUBMITTED',
+      submittedAt:          new Date().toISOString(),
+      policyJustifications: policyJustifications,
     });
 
     // Normalise warnings — ensure they are always plain strings, never objects

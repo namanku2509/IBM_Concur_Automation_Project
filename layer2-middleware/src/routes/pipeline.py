@@ -80,6 +80,10 @@ async def run_pipeline(
         str,
         Form(description="Employee ID from Layer 3 (e.g. EMP001)"),
     ],
+    payment_hint: Annotated[
+        str,
+        Form(description="'card' (default) or 'cash'. Cash receipts skip card matching and are recorded as PERSONAL_CASH."),
+    ] = "card",
 ) -> PipelineResult:
     if not files:
         raise HTTPException(status_code=422, detail="At least one PDF file is required.")
@@ -143,7 +147,8 @@ async def run_pipeline(
     async def process_one(filename: str, file_bytes: bytes) -> ReceiptResult:
         async with semaphore:
             return await _process_single_receipt(
-                filename, file_bytes, report_id, employee_id, claim_ledger
+                filename, file_bytes, report_id, employee_id, claim_ledger,
+                payment_hint=payment_hint,
             )
 
     # Run all unique receipts in parallel
@@ -195,6 +200,7 @@ async def _process_single_receipt(
     report_id: str,
     employee_id: str,
     claim_ledger=None,
+    payment_hint: str = "card",
 ) -> ReceiptResult:
     """Process one receipt through all 5 pipeline stages. Never raises — errors are captured."""
 
@@ -212,21 +218,76 @@ async def _process_single_receipt(
         # Stage 1 — OCR
         ocr_result = await extract_text(file_bytes, filename)
 
+        # Guard: wrong drop zone — run BEFORE the empty-text bail-out so that
+        # a card receipt uploaded to the cash box (or vice versa) always gets
+        # the clear wrong-box message even when OCR text is sparse.
+        raw_text_for_detection = ocr_result.raw_text or ""
+        detected_mode = _detect_payment_mode(raw_text_for_detection)
+        logger.info("Payment mode detected: %s | hint: %s | file: %s", detected_mode, payment_hint, filename)
+
+        if payment_hint == "card" and detected_mode == "cash":
+            return ReceiptResult(
+                filename=filename,
+                status="error",
+                file_hash=ocr_result.file_hash,
+                error_message=(
+                    "This receipt shows a Cash payment. "
+                    "Please upload it using the 'Cash / Out-of-Pocket Receipts' drop box."
+                ),
+            )
+
+        if payment_hint == "cash" and detected_mode == "card":
+            return ReceiptResult(
+                filename=filename,
+                status="error",
+                file_hash=ocr_result.file_hash,
+                error_message=(
+                    "This receipt shows a Corporate Card payment. "
+                    "Please upload it using the 'Corporate Card Receipts' drop box."
+                ),
+            )
+
+        # Guard: empty OCR text means Docling could not read the PDF.
+        # Checked after wrong-box detection so a misplaced receipt gets the
+        # actionable wrong-box message rather than a generic "scanned image" error.
+        if not raw_text_for_detection or len(raw_text_for_detection.strip()) < 20:
+            logger.warning(
+                "OCR produced no usable text for '%s' (%d chars) — "
+                "receipt is likely a scanned image PDF with no text layer.",
+                filename, len(raw_text_for_detection),
+            )
+            return ReceiptResult(
+                filename=filename,
+                status="error",
+                file_hash=ocr_result.file_hash,
+                error_message=(
+                    "OCR could not extract text from this receipt. "
+                    "The PDF may be a scanned image. "
+                    "Try printing to PDF from the original application, or use a clearer scan."
+                ),
+            )
+
         # Stage 2 — Categorise
         cat_result = await categorise(ocr_result.raw_text)
 
         # Stage 3 — Extract
         extracted = await extract(ocr_result, cat_result)
 
-        # Stage 4 — Match (claim_ledger ensures exclusive assignment across batch)
-        match_result = await match(extracted, employee_id, report_id, claim_ledger)
-
-        if match_result.txn_id:
-            extracted.payment_type = "CORPORATE_CARD"
+        # Stage 4 — Match (skipped for cash receipts — no card transaction expected)
+        if payment_hint == "cash":
+            # Cash upload: bypass card matching entirely, mark as personal cash
+            from src.services.matching_service import MatchResult
+            match_result = MatchResult(txn_id=None, confidence=0.0, score_vendor=0.0, score_amount=0.0, score_date=0.0)
+            extracted.payment_type = "OUT_OF_POCKET"
+        else:
+            match_result = await match(extracted, employee_id, report_id, claim_ledger)
+            if match_result.txn_id:
+                extracted.payment_type = "CORPORATE_CARD"
 
         # Stage 5 — Register receipt (cross-batch duplicate check via Layer 3 409)
         receipt_id = None
         warnings: list = []
+
         dry_run = config.DRY_RUN
 
         if not dry_run:
@@ -235,21 +296,14 @@ async def _process_single_receipt(
                 receipt_resp = await register_receipt(receipt_req)
                 receipt_id = receipt_resp.receipt_id
             except DuplicateReceiptError as dup:
-                logger.warning(
-                    "Cross-batch duplicate | file=%s | existing_id=%s",
+                # Receipt was already registered in a previous run — reuse the existing
+                # receipt ID and continue building a full success result rather than
+                # returning a dead-end duplicate with no expense data.
+                logger.info(
+                    "Cross-batch duplicate | file=%s | reusing existing_id=%s",
                     filename, dup.existing_receipt_id,
                 )
-                return ReceiptResult(
-                    filename=filename,
-                    status="duplicate",
-                    file_hash=ocr_result.file_hash,
-                    expense_id=dup.existing_receipt_id,
-                    error_message=(
-                        "This receipt has already been uploaded and registered. "
-                        f"Existing receipt ID: {dup.existing_receipt_id}"
-                    ),
-                    dry_run=dry_run,
-                )
+                receipt_id = dup.existing_receipt_id or None
 
         exp_type = extracted.expense_type
         date_str = (
@@ -338,3 +392,46 @@ async def _process_single_receipt(
             status="error",
             error_message=str(exc),
         )
+
+def _detect_payment_mode(text: str) -> str:
+    """
+    Detect whether a receipt is a cash or corporate-card payment from OCR text.
+
+    Returns:
+        "card"    — receipt explicitly shows corporate/credit/debit card payment
+        "cash"    — receipt explicitly shows cash payment
+        "unknown" — payment mode not determinable from text (let it through)
+    """
+    import re
+    t = text.lower()
+
+    # Card signals — ordered most specific first
+    card_patterns = [
+        r"corporate\s*card",
+        r"card\s*xxxx",
+        r"credit\s*card",
+        r"debit\s*card",
+        r"card\s*no\.?\s*\d",
+        r"visa|mastercard|rupay|amex",
+        r"payment\s*mode\s*[:\|]?\s*card",
+        r"paid\s*by\s*card",
+    ]
+    for p in card_patterns:
+        if re.search(p, t):
+            return "card"
+
+    # Cash signals
+    cash_patterns = [
+        r"payment\s*mode\s*[:\|]?\s*cash",
+        r"payment\s*mode\s*cash",          # handles "Payment Mode Cash Amount Paid"
+        r"paid\s*by\s*cash",
+        r"amount\s*paid\s*[:\|]?\s*cash",
+        r"cash\s*payment",
+        r"payment\s*:\s*cash",
+    ]
+    for p in cash_patterns:
+        if re.search(p, t):
+            return "cash"
+
+    return "unknown"
+
