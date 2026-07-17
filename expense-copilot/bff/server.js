@@ -4,6 +4,9 @@ const session = require('express-session');
 require('dotenv').config();
 
 const reportRoutes = require('./routes/report');
+const chatRoutes   = require('./routes/chat');
+const tokenRoutes  = require('./routes/token');
+const wxoRoutes    = require('./routes/wxo');
 
 const app = express();
 
@@ -18,6 +21,9 @@ app.use(session({
 }));
 
 app.use('/api/report', reportRoutes);
+app.use('/api/chat',   chatRoutes);
+app.use('/api/token',  tokenRoutes);
+app.use('/api/wxo',    wxoRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ service: 'BFF Server', status: 'ok' });

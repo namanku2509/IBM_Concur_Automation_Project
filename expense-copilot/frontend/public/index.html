@@ -5,39 +5,70 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="Web site created using create-react-app"
-    />
+    <meta name="description" content="IBM Expense Claims Copilot — AI-powered expense reporting" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
-
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-    <title>React App</title>
+    <title>Expense Claims Copilot</title>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
+
+    <!-- React mounts here -->
     <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
 
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
+    <!-- WXO loader targets this element via rootElementID -->
+    <div id="wxo-chat-container"></div>
 
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
+    <script>
+      // BFF signs a short-lived RS256 JWT — the private key never reaches the browser.
+      const wxoAuthUrl = window.WXO_AUTH_URL ||
+        (window.location.hostname === 'localhost'
+          ? 'http://localhost:4000/api/wxo/auth-token'
+          : '/api/wxo/auth-token');
+
+      async function getWxoToken() {
+        const response = await fetch(wxoAuthUrl, { credentials: 'include' });
+        if (!response.ok) throw new Error('WXO token request failed (' + response.status + ')');
+        const { token } = await response.json();
+        return token;
+      }
+
+      async function onWxoLoad(instance) {
+        instance.on('authTokenNeeded', async function (event) {
+          try {
+            event.authToken = await getWxoToken();
+          } catch (error) {
+            console.error('Unable to refresh watsonx Orchestrate token:', error);
+          }
+        });
+      }
+
+      async function initialiseWxoChat() {
+        const token = await getWxoToken();
+        window.wxOConfiguration = {
+          orchestrationID:    "f766b6e3a9ca413bbe7c93c2aa1dac6e_96660f2f-a5fc-43b0-9477-3bb04f333298",
+          hostURL:            "https://au-syd.watson-orchestrate.cloud.ibm.com",
+          rootElementID:      "wxo-chat-container",
+          deploymentPlatform: "ibmcloud",
+          crn:                "crn:v1:bluemix:public:watsonx-orchestrate:au-syd:a/f766b6e3a9ca413bbe7c93c2aa1dac6e:96660f2f-a5fc-43b0-9477-3bb04f333298::",
+          userAuthJWT:        token,
+          chatOptions: {
+            agentId:            "d79cf9b8-5b21-4e17-be59-35e603976477",
+            agentEnvironmentId: "2f43ee7e-d572-4032-beaa-203c759a3380",
+            onLoad:             onWxoLoad,
+          }
+        };
+        const script = document.createElement('script');
+        script.src = window.wxOConfiguration.hostURL + '/wxochat/wxoLoader.js?embed=true';
+        script.addEventListener('load', function () {
+          wxoLoader.init();
+        });
+        document.head.appendChild(script);
+      }
+
+      initialiseWxoChat().catch(function (error) {
+        console.error('Unable to initialise watsonx Orchestrate chat:', error);
+      });
+    </script>
   </body>
 </html>

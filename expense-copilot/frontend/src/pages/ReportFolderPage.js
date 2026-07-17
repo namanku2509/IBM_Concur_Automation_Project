@@ -537,7 +537,7 @@ function ReportFolderPage() {
       </div>
 
       {/* ── Chat panel ── */}
-      <ChatPanel messages={chatMessages} onMessage={addAgentMessage} folderStatus={folderStatus} />
+      <ChatPanel />
 
       {/* ── Submit confirmation modal ── */}
       {showModal && (

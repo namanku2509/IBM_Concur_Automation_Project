@@ -1,2 +1,81 @@
-.chat-panel { background: #fff; border-left: 1px solid #e8edeb; display: flex; flex-direction: column; height: 100vh; min-width: 312px; position: sticky; top: 0; width: 312px; }.chat-panel-header { background: #273e35; border-bottom: 0; padding: 20px 21px; }.chat-panel-header-title { color: #eff9f0; font: 700 14px Manrope, sans-serif; margin: 0 0 4px; }.chat-panel-header-sub { color: #a9c3ae; font-size: 10px; margin: 0; }.chat-panel-messages { display: flex; flex: 1; flex-direction: column; gap: 10px; overflow-y: auto; padding: 18px; }.chat-bubble { border-radius: 10px; font-size: 11px; line-height: 1.5; max-width: 88%; padding: 9px 11px; white-space: pre-wrap; word-break: break-word; }.chat-bubble--agent { align-self: flex-start; background: #edf8ee; border-bottom-left-radius: 3px; color: #35453b; }.chat-bubble--user { align-self: flex-end; background: #263d34; border-bottom-right-radius: 3px; color: #fff; }.chat-bubble-time { color: #83928a; display: block; font-size: 8px; margin-top: 4px; }.chat-bubble--user .chat-bubble-time { color: #c4d7c8; text-align: right; }.chat-input-row { border-top: 1px solid #e8edeb; display: flex; gap: 7px; padding: 12px; }.chat-input { border: 1px solid #dce4df; border-radius: 7px; flex: 1; font-size: 11px; height: 36px; line-height: 1.4; outline: none; padding: 8px; resize: none; }.chat-input:focus { border-color: #67ba73; box-shadow: 0 0 0 2px #e1f3e3; }.chat-send-btn { background: #263d34; border: 0; border-radius: 7px; color: #fff; cursor: pointer; font-size: 10px; font-weight: 700; padding: 0 11px; }.chat-send-btn:hover { background: #172d24; }.chat-send-btn:disabled { background: #cdd4d0; cursor: not-allowed; }
-@media (max-width: 980px) { .chat-panel { border-left: 0; border-top: 1px solid #e8edeb; height: 420px; position: static; width: 100%; }.chat-panel-messages { max-height: 285px; } }
+/* ── Panel shell ──────────────────────────────────────────────────────────── */
+.chat-panel {
+  border-left: 1px solid #e8edeb;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  width: 400px;
+  min-width: 400px;
+  flex-shrink: 0;
+}
+
+/* ── WXO widget container ─────────────────────────────────────────────────── */
+/* Force the wxoLoader to fill the panel instead of rendering as a button.   */
+/* The widget checks its container dimensions on init — giving it a real     */
+/* height causes it to open in inline/expanded mode automatically.           */
+.wxo-chat-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Target the iframe/div the wxoLoader injects */
+.wxo-chat-container > * {
+  height: 100% !important;
+  max-height: 100% !important;
+  width: 100% !important;
+  position: absolute !important;
+  inset: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Hide the floating launcher button — we ARE the panel */
+#WACLauncher__ButtonWrapper,
+.WACLauncher__ButtonWrapper,
+[class*="Launcher"],
+[class*="launcher"],
+[id*="Launcher"] {
+  display: none !important;
+}
+
+/* Force the chat window open and fill the container */
+#WACContainer,
+.WACContainer,
+[class*="WACContainer"],
+[class*="wac-container"],
+[id*="WACContainer"] {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  bottom: auto !important;
+  right: auto !important;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .chat-panel {
+    width: 340px;
+    min-width: 340px;
+  }
+}
+@media (max-width: 980px) {
+  .chat-panel {
+    border-left: 0;
+    border-top: 1px solid #e8edeb;
+    height: 520px;
+    position: static;
+    width: 100%;
+    min-width: 0;
+  }
+}

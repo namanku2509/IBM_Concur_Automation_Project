@@ -1,5 +1,5 @@
 .report-folder-page { background: #f7f9f8; display: flex; font-family: 'DM Sans', Arial, sans-serif; min-height: 100vh; }
-.report-folder-main { flex: 1; margin: 0 auto; max-width: 1080px; min-width: 0; padding: 38px 42px 48px; }
+.report-folder-main { flex: 1; min-width: 0; padding: 38px 42px 48px; }
 .report-header-tile, .pipeline-tracker, .available-expenses-tile, .receipt-upload-tile, .processed-expenses-tile { background: #fff !important; border: 1px solid #e8edeb; border-radius: 12px; box-shadow: none; }
 .report-header-tile { border-left: 4px solid #63bf70; margin-bottom: 20px; padding: 23px !important; }
 .report-header-top { align-items: flex-start; display: flex; gap: 16px; justify-content: space-between; margin-bottom: 13px; }
