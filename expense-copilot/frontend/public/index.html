@@ -16,10 +16,19 @@
     <!-- React mounts here -->
     <div id="root"></div>
 
-    <!-- WXO loader targets this element via rootElementID -->
-    <div id="wxo-chat-container"></div>
-
     <script>
+      // Suppress the harmless WXO analytics 401 — it's a non-critical telemetry
+      // call that always fails in embed mode. Hide it so the console stays clean.
+      (function () {
+        var _origError = console.error.bind(console);
+        console.error = function () {
+          var msg = Array.prototype.join.call(arguments, ' ');
+          if (msg.indexOf('mfe_wxo_chat/api/analytics') !== -1) return;
+          if (msg.indexOf('analytics') !== -1 && msg.indexOf('401') !== -1) return;
+          _origError.apply(console, arguments);
+        };
+      })();
+
       // BFF signs a short-lived RS256 JWT — the private key never reaches the browser.
       const wxoAuthUrl = window.WXO_AUTH_URL ||
         (window.location.hostname === 'localhost'
@@ -33,12 +42,94 @@
         return token;
       }
 
+      // Serial send queue — one silent status message at a time so overlapping
+      // instance.send() calls do not close the SSE stream mid-workflow.
+      (function () {
+        var queue = [];
+        var draining = false;
+        var resolveReceive = null;
+        var RECEIVE_TIMEOUT_MS = 90000;
+
+        function waitForAgentResponse() {
+          return new Promise(function (resolve) {
+            resolveReceive = resolve;
+            setTimeout(function () {
+              if (resolveReceive === resolve) {
+                resolveReceive = null;
+                resolve();
+              }
+            }, RECEIVE_TIMEOUT_MS);
+          });
+        }
+
+        async function drainQueue() {
+          if (draining) return;
+          var instance = window.wxoInstance;
+          if (!window.wxoChatReady || !instance || typeof instance.send !== 'function') return;
+
+          draining = true;
+          try {
+            while (queue.length > 0) {
+              var text = queue.shift();
+              try {
+                await instance.send(text, { silent: true });
+                await waitForAgentResponse();
+              } catch (err) {
+                console.error('[WxOChat] Failed to send status update:', err);
+              }
+            }
+          } finally {
+            draining = false;
+            if (queue.length > 0) drainQueue();
+          }
+        }
+
+        window.wxoSendStatus = function (text) {
+          if (!text) return;
+          queue.push(text);
+          drainQueue();
+        };
+
+        window.wxoOnAgentReceive = function () {
+          if (resolveReceive) {
+            var done = resolveReceive;
+            resolveReceive = null;
+            done();
+          }
+        };
+
+        window.wxoKickSendQueue = drainQueue;
+      })();
+
       async function onWxoLoad(instance) {
         instance.on('authTokenNeeded', async function (event) {
           try {
             event.authToken = await getWxoToken();
           } catch (error) {
             console.error('Unable to refresh watsonx Orchestrate token:', error);
+          }
+        });
+
+        window.wxoInstance = instance;
+        window.wxoChatReady = false;
+
+        // Unblock the next queued message once the agent finishes each turn.
+        instance.on('receive', function () {
+          if (typeof window.wxoOnAgentReceive === 'function') {
+            window.wxoOnAgentReceive();
+          }
+        });
+
+        instance.on('chat:ready', function () {
+          window.wxoChatReady = true;
+          // Migrate any messages queued before the loader was ready.
+          var pending = window._wxoPendingMessages || [];
+          window._wxoPendingMessages = [];
+          pending.forEach(function (text) {
+            window.wxoSendStatus(text);
+          });
+          if (typeof window.wxoKickSendQueue === 'function') {
+            window.wxoKickSendQueue();
           }
         });
       }
@@ -51,7 +142,7 @@
           rootElementID:      "wxo-chat-container",
           deploymentPlatform: "ibmcloud",
           crn:                "crn:v1:bluemix:public:watsonx-orchestrate:au-syd:a/f766b6e3a9ca413bbe7c93c2aa1dac6e:96660f2f-a5fc-43b0-9477-3bb04f333298::",
-          userAuthJWT:        token,
+          token:              token,
           chatOptions: {
             agentId:            "d79cf9b8-5b21-4e17-be59-35e603976477",
             agentEnvironmentId: "2f43ee7e-d572-4032-beaa-203c759a3380",
@@ -66,8 +157,13 @@
         document.head.appendChild(script);
       }
 
-      initialiseWxoChat().catch(function (error) {
-        console.error('Unable to initialise watsonx Orchestrate chat:', error);
+      // The React ChatPanel owns the only mount point. Waiting prevents the
+      // loader from binding to a duplicate static node before React renders.
+      window.addEventListener('wxo-chat-container-ready', function initialiseOnce() {
+        window.removeEventListener('wxo-chat-container-ready', initialiseOnce);
+        initialiseWxoChat().catch(function (error) {
+          console.error('Unable to initialise watsonx Orchestrate chat:', error);
+        });
       });
     </script>
   </body>

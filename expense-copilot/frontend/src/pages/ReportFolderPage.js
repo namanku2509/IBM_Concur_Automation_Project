@@ -108,7 +108,6 @@ function ReportFolderPage() {
   const [submitting,         setSubmitting]         = useState(false);
   const [submitError,        setSubmitError]        = useState(null);
   const [confirmation,       setConfirmation]       = useState(null);
-  const [chatMessages,       setChatMessages]       = useState([]);
   const [showModal,          setShowModal]          = useState(false);
 
   // ── Pipeline tracker state ─────────────────────────────────────────────────
@@ -127,11 +126,18 @@ function ReportFolderPage() {
   }
 
   // ── Chat helper ───────────────────────────────────────────────────────────
+  // Sends pipeline status updates into the live WXO agent chat via the serial
+  // queue in index.html (window.wxoSendStatus).
   const addAgentMessage = useCallback(message => {
-    const entry = typeof message === 'string'
-      ? { from: 'agent', text: message, ts: new Date().toLocaleTimeString() }
-      : message;
-    setChatMessages(prev => [...prev, entry]);
+    const text = typeof message === 'string' ? message : message.text;
+    if (!text) return;
+
+    if (typeof window.wxoSendStatus === 'function') {
+      window.wxoSendStatus(text);
+    } else {
+      window._wxoPendingMessages = window._wxoPendingMessages || [];
+      window._wxoPendingMessages.push(text);
+    }
   }, []);
 
   // ── Step 2: Load transactions on mount ───────────────────────────────────
