@@ -24,11 +24,91 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
-    <title>React App</title>
+    <title>IBM Travel & Expense</title>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <script>
+      (function () {
+        var started = false;
+
+        // Resolve the BFF base URL: same-origin in production (nginx proxy_pass /api/),
+        // explicit localhost:4000 in local dev.
+        function api(path) {
+          return window.location.hostname === 'localhost'
+            ? 'http://localhost:4000' + path
+            : path;
+        }
+
+        // Fetch a fresh RS256 JWT from the BFF.
+        // Returns the raw token string, throws on HTTP error.
+        async function fetchToken() {
+          var resp = await fetch(api('/api/wxo/auth-token'), { credentials: 'include' });
+          if (!resp.ok) throw new Error('WXO token request failed (' + resp.status + ')');
+          return (await resp.json()).token;
+        }
+
+        async function start() {
+          if (started) return;
+          started = true;
+
+          // 1. Fetch non-secret widget config from BFF
+          var configResp = await fetch(api('/api/chat/config'), { credentials: 'include' });
+          var config = await configResp.json();
+          if (!config.configured) return;   // WXO not configured — skip silently
+
+          // 2. Obtain the initial auth token (must be provided synchronously on init)
+          config.rootElementID = 'wxo-chat-container';
+          config.token = await fetchToken();
+
+          // 3. Wire up the widget lifecycle callbacks
+          config.chatOptions.onLoad = function (instance) {
+            window.wxoInstance = instance;
+
+            // authTokenNeeded: fired when the current token is about to expire.
+            // The WXO SDK passes an event object with a resolveToken(token) method.
+            // Assigning to event.authToken (old pattern) no longer works in WXO SDK v2+.
+            instance.on('authTokenNeeded', async function (event) {
+              try {
+                var freshToken = await fetchToken();
+                // resolveToken() is the SDK v2+ API; guard with a typeof check so
+                // that older SDK builds (which use event.authToken) still work.
+                if (typeof event.resolveToken === 'function') {
+                  event.resolveToken(freshToken);
+                } else {
+                  event.authToken = freshToken;
+                }
+              } catch (err) {
+                console.error('[wxo] Token refresh failed:', err);
+              }
+            });
+
+            instance.on('chat:ready', function () {
+              window.wxoChatReady = true;
+            });
+          };
+
+          // 4. Inject the wxoLoader script and initialise
+          window.wxOConfiguration = config;
+          var script = document.createElement('script');
+          script.src = config.hostURL + '/wxochat/wxoLoader.js?embed=true';
+          script.onerror = function () {
+            console.error('[wxo] Failed to load wxoLoader.js — check WXO_HOST_URL and network.');
+          };
+          script.onload = function () { window.wxoLoader.init(); };
+          document.head.appendChild(script);
+        }
+
+        // The ChatPanel React component dispatches this event once its container
+        // div is in the DOM and ready to host the widget iframe.
+        window.addEventListener(
+          'wxo-chat-container-ready',
+          function () { start().catch(function (err) { console.error('Unable to initialise watsonx Orchestrate:', err); }); },
+          { once: true }
+        );
+      })();
+    </script>
     <!--
       This HTML file is a template.
       If you open it directly in the browser, you will see an empty page.

@@ -3,100 +3,81 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Roam — Travel Claims</title>
+    <title>Roam — IBM Travel & Expense</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <div class="shell">
+
+      <!-- ── Sidebar ── -->
       <aside class="sidebar">
         <a class="brand" href="#"><span class="brand-mark">r</span><span>roam</span></a>
         <nav class="nav" aria-label="Primary">
-          <button class="nav-item active" data-page="Dashboard"><i data-icon="grid"></i><span>Dashboard</span></button>
-          <button class="nav-item" data-page="New claim"><i data-icon="plus"></i><span>New claim</span></button>
-          <button class="nav-item" data-page="My claims"><i data-icon="receipt"></i><span>My claims</span></button>
-          <button class="nav-item" data-page="Trips"><i data-icon="plane"></i><span>Trips</span></button>
-          <button class="nav-item" data-page="Receipts"><i data-icon="file"></i><span>Receipts</span></button>
-          <div class="nav-label">Workspace</div>
-          <button class="nav-item" data-page="Approvals"><i data-icon="check-circle"></i><span>Approvals</span><b>3</b></button>
-          <button class="nav-item" data-page="Reports"><i data-icon="chart"></i><span>Reports</span></button>
-          <button class="nav-item" data-page="Policies"><i data-icon="shield"></i><span>Policies</span></button>
+          <button class="nav-item active" data-page="dashboard">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            Dashboard
+          </button>
+          <button class="nav-item" data-page="new-claim">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            New claim
+          </button>
+          <button class="nav-item" data-page="my-claims">
+            <svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h4"/></svg>
+            My claims
+          </button>
+          <button class="nav-item" data-page="book-flight">
+            <svg viewBox="0 0 24 24"><path d="m22 16-8.5-4.5V5.2a1.5 1.5 0 0 0-3 0v6.3L2 16v2l8.5-2v3.5l-2 1.5v1h7v-1l-2-1.5V16l8.5 2v-2Z"/></svg>
+            Book flight
+          </button>
+          <button class="nav-item" data-page="book-hotel">
+            <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="18" rx="1"/><path d="M9 21V12h6v9M2 9h20"/></svg>
+            Book hotel
+          </button>
         </nav>
-        <div class="sidebar-bottom">
-          <button class="assistant-card" id="aiOpen"><span class="sparkle">✦</span><span><strong>Roam AI</strong><small>Your expense assistant</small></span><i data-icon="arrow"></i></button>
-          <button class="nav-item"><i data-icon="settings"></i><span>Settings</span></button>
+        <div class="sidebar-foot">
+          <button class="ai-card" id="aiBtn">
+            <span class="ai-star">✦</span>
+            <span><strong>Roam AI</strong><small>Expense assistant</small></span>
+          </button>
+          <div class="user-row">
+            <div class="avatar">PS</div>
+            <div><strong>Priya Sharma</strong><small>EMP001</small></div>
+          </div>
         </div>
       </aside>
 
+      <!-- ── Main ── -->
       <main class="main">
         <header class="topbar">
-          <div class="mobile-brand"><span class="brand-mark">r</span> roam</div>
-          <div class="crumb"><span id="pageName">Overview</span><span class="dot">•</span><span>July 2026</span></div>
-          <div class="top-actions">
-            <label class="search"><i data-icon="search"></i><input id="searchInput" placeholder="Search claims, receipts..." /><kbd>⌘ K</kbd></label>
-            <button class="icon-button" id="notificationButton" aria-label="Notifications"><i data-icon="bell"></i><em></em></button>
-            <button class="icon-button" aria-label="Calendar"><i data-icon="calendar"></i></button>
-            <button class="avatar avatar-top" id="profileButton">AN</button>
+          <span class="breadcrumb" id="breadcrumb">Overview</span>
+          <div class="topbar-right">
+            <input class="search" id="searchInput" placeholder="Search claims…" />
+            <button class="topbar-btn" id="refreshBtn" title="Refresh data">
+              <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14.9-4M20 12a8 8 0 0 1-14.9 4"/><path d="M18 4v4h-4M6 20v-4H2"/></svg>
+            </button>
           </div>
         </header>
 
-        <div class="content">
-          <section class="intro">
-            <div><p class="eyebrow">THURSDAY, 16 JULY</p><h1>Good morning, Ananya <span>✦</span></h1><p class="muted">Here’s a clear view of your company travel spend.</p></div>
-            <button class="primary-button" id="newClaim"><i data-icon="plus"></i> New claim</button>
-          </section>
-
-          <section class="kpis" aria-label="Claim summary">
-            <article class="kpi-card mint"><div class="kpi-icon"><i data-icon="wallet"></i></div><p>Total claims</p><h2>₹1,84,260</h2><div><span class="trend up">↗ 12.8%</span><small>vs last month</small></div><button>View details <i data-icon="arrow"></i></button></article>
-            <article class="kpi-card lilac"><div class="kpi-icon"><i data-icon="clock"></i></div><p>Pending review</p><h2>₹42,680</h2><div><span class="trend neutral">4 claims</span><small>awaiting approval</small></div><button>View details <i data-icon="arrow"></i></button></article>
-            <article class="kpi-card peach"><div class="kpi-icon"><i data-icon="check-circle"></i></div><p>Approved amount</p><h2>₹96,420</h2><div><span class="trend up">↗ 8.4%</span><small>vs last month</small></div><button>View details <i data-icon="arrow"></i></button></article>
-            <article class="kpi-card blue"><div class="kpi-icon"><i data-icon="bank"></i></div><p>Total reimbursed</p><h2>₹1,46,890</h2><div><span class="trend up">↗ 16.2%</span><small>vs last month</small></div><button>View details <i data-icon="arrow"></i></button></article>
-          </section>
-
-          <section class="section-heading"><div><h2>Recent claims</h2><p>Track and manage your latest reimbursement requests.</p></div><button class="text-button" id="viewAll">View all claims <i data-icon="arrow"></i></button></section>
-          <section class="claims-list" id="claimsList">
-            <article class="claim-card" data-claim="Mumbai client summit">
-              <div class="claim-leading"><div class="trip-icon indigo"><i data-icon="plane"></i></div><div><div class="claim-title">Mumbai client summit <span class="status pending">In review</span></div><p>Client meetings · 04—07 Jul 2026</p></div></div>
-              <div class="route"><strong>DEL</strong><span><i></i><i></i><i></i></span><strong>BOM</strong></div>
-              <div class="claim-meta"><span>₹28,640</span><small>Travel & stay</small></div>
-              <div class="claim-owner"><div class="avatar stack-avatar">RK</div><div><span>Raj Kumar</span><small>Manager</small></div></div>
-              <div class="receipt-count"><i data-icon="file"></i> 4</div><button class="more-button" aria-label="Claim options">•••</button>
-            </article>
-            <article class="claim-card" data-claim="Bengaluru offsite">
-              <div class="claim-leading"><div class="trip-icon orange"><i data-icon="users"></i></div><div><div class="claim-title">Bengaluru team offsite <span class="status approved">Approved</span></div><p>Team offsite · 25—28 Jun 2026</p></div></div>
-              <div class="route"><strong>DEL</strong><span><i></i><i></i><i></i></span><strong>BLR</strong></div>
-              <div class="claim-meta"><span>₹41,580</span><small>Travel & meals</small></div>
-              <div class="claim-owner"><div class="avatar stack-avatar rose">PS</div><div><span>Priya Shah</span><small>Manager</small></div></div>
-              <div class="receipt-count"><i data-icon="file"></i> 6</div><button class="more-button" aria-label="Claim options">•••</button>
-            </article>
-            <article class="claim-card" data-claim="Hyderabad product launch">
-              <div class="claim-leading"><div class="trip-icon teal"><i data-icon="pin"></i></div><div><div class="claim-title">Hyderabad product launch <span class="status paid">Reimbursed</span></div><p>Product launch · 12—15 Jun 2026</p></div></div>
-              <div class="route"><strong>DEL</strong><span><i></i><i></i><i></i></span><strong>HYD</strong></div>
-              <div class="claim-meta"><span>₹23,950</span><small>Local travel</small></div>
-              <div class="claim-owner"><div class="avatar stack-avatar gold">DM</div><div><span>Dev Malhotra</span><small>Manager</small></div></div>
-              <div class="receipt-count"><i data-icon="file"></i> 3</div><button class="more-button" aria-label="Claim options">•••</button>
-            </article>
-          </section>
-
-          <section class="analytics-grid">
-            <article class="panel expense-panel"><div class="panel-title"><div><h2>Expense breakdown</h2><p>Your claim spend by category</p></div><button class="select-button">This month <i data-icon="chevron"></i></button></div><div class="donut-layout"><div class="donut"><div><strong>₹1.84L</strong><span>Total</span></div></div><div class="legend"><span><i class="green-dot"></i><b>Accommodation</b><em>38% · ₹69,900</em></span><span><i class="purple-dot"></i><b>Transport</b><em>28% · ₹51,620</em></span><span><i class="yellow-dot"></i><b>Meals</b><em>21% · ₹38,690</em></span><span><i class="pink-dot"></i><b>Other</b><em>13% · ₹24,050</em></span></div></div></article>
-            <article class="panel trend-panel"><div class="panel-title"><div><h2>Reimbursement trend</h2><p>Monthly approved claim amount</p></div><button class="select-button">Last 6 months <i data-icon="chevron"></i></button></div><div class="chart"><div class="y-axis"><span>₹80k</span><span>₹60k</span><span>₹40k</span><span>₹20k</span><span>₹0</span></div><svg viewBox="0 0 520 210" preserveAspectRatio="none" aria-label="Reimbursement trend chart"><defs><linearGradient id="area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#65d46e" stop-opacity=".26"/><stop offset="1" stop-color="#65d46e" stop-opacity="0"/></linearGradient></defs><path class="grid" d="M0 20H520M0 65H520M0 110H520M0 155H520M0 200H520"/><path class="area" d="M10,150 C55,130 73,145 105,126 S158,88 192,110 S240,134 275,91 S332,112 360,78 S415,36 448,58 S486,33 510,24 L510,200 L10,200Z"/><path class="line" d="M10,150 C55,130 73,145 105,126 S158,88 192,110 S240,134 275,91 S332,112 360,78 S415,36 448,58 S486,33 510,24"/><circle cx="510" cy="24" r="5"/></svg><div class="months"><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span></div></div></article>
-          </section>
-        </div>
+        <!-- Page content injected here -->
+        <div class="content" id="content"></div>
       </main>
-
-      <aside class="utility-panel">
-        <div class="utility-header"><h2>At a glance</h2><button class="icon-button"><i data-icon="more"></i></button></div>
-        <section class="next-payment"><div><span class="tiny-label">NEXT REIMBURSEMENT</span><h3>₹42,680</h3><p><i data-icon="calendar"></i> Expected by 24 July</p></div><div class="payment-art">₹</div></section>
-        <section class="utility-section"><div class="utility-title"><h3>Claim status</h3><button>View all</button></div><div class="status-row"><span class="status-dot review"></span><span>In review</span><b>04</b><div><i style="width:36%"></i></div></div><div class="status-row"><span class="status-dot approved-dot"></span><span>Approved</span><b>08</b><div><i style="width:70%"></i></div></div><div class="status-row"><span class="status-dot paid-dot"></span><span>Reimbursed</span><b>12</b><div><i style="width:100%"></i></div></div></section>
-        <section class="utility-section activity"><div class="utility-title"><h3>Recent activity</h3><button>View all</button></div><div class="timeline"><div><i class="timeline-icon check">✓</i><p><b>Claim approved</b><span>Bengaluru team offsite</span><time>2 hours ago</time></p></div><div><i class="timeline-icon file">↗</i><p><b>Receipt added</b><span>Cab receipt · Mumbai trip</span><time>Yesterday</time></p></div><div><i class="timeline-icon money">₹</i><p><b>Reimbursement processed</b><span>Hyderabad product launch</span><time>12 Jun</time></p></div></div></section>
-        <section class="ai-insight"><div class="ai-title"><span>✦</span><b>Roam AI insight</b><button aria-label="Dismiss">×</button></div><p>You’re <b>12% under</b> your travel budget this month. Great planning!</p><a href="#">Explore your spend <i data-icon="arrow"></i></a></section>
-      </aside>
     </div>
-    <div class="modal-backdrop" id="modal"><form class="claim-modal" id="claimForm"><button type="button" class="modal-close" id="closeModal">×</button><span class="eyebrow">NEW REIMBURSEMENT</span><h2>Start a travel claim</h2><p>Capture the details now. You can add receipts next.</p><label>Business purpose<input required placeholder="e.g. Client workshop in Mumbai" /></label><div class="form-row"><label>Travel dates<input type="date" required /></label><label>Estimated amount<input type="number" placeholder="₹ 0" /></label></div><button class="primary-button" type="submit">Create claim <i data-icon="arrow"></i></button></form></div>
-    <div class="toast" id="toast"><span>✓</span><div><b>Claim created</b><p>Your draft is ready for receipts.</p></div></div>
+
+    <!-- Detail drawer (slide-in panel for claim/booking details) -->
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <aside class="drawer" id="drawer">
+      <div class="drawer-inner" id="drawerInner"></div>
+    </aside>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">
+      <span class="toast-icon" id="toastIcon">✓</span>
+      <div><b id="toastTitle"></b><p id="toastMsg"></p></div>
+    </div>
+
     <script src="app.js"></script>
   </body>
 </html>

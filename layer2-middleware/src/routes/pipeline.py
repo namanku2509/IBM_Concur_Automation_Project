@@ -142,13 +142,26 @@ async def run_pipeline(
 
     # Shared claim ledger: prevents two receipts from matching the same card txn
     from src.services.matching_service import _ClaimLedger
+    from src.services.concur_client import fetch_available_transactions
     claim_ledger = _ClaimLedger()
+
+    available_transactions = None
+    if payment_hint != "cash":
+        try:
+            available_transactions = await fetch_available_transactions(employee_id, report_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not prefetch available transactions from Layer 3: %s — proceeding with no match.",
+                exc,
+            )
+            available_transactions = []
 
     async def process_one(filename: str, file_bytes: bytes) -> ReceiptResult:
         async with semaphore:
             return await _process_single_receipt(
                 filename, file_bytes, report_id, employee_id, claim_ledger,
                 payment_hint=payment_hint,
+                available_transactions=available_transactions,
             )
 
     # Run all unique receipts in parallel
@@ -201,6 +214,7 @@ async def _process_single_receipt(
     employee_id: str,
     claim_ledger=None,
     payment_hint: str = "card",
+    available_transactions=None,
 ) -> ReceiptResult:
     """Process one receipt through all 5 pipeline stages. Never raises — errors are captured."""
 
@@ -280,7 +294,13 @@ async def _process_single_receipt(
             match_result = MatchResult(txn_id=None, confidence=0.0, score_vendor=0.0, score_amount=0.0, score_date=0.0)
             extracted.payment_type = "OUT_OF_POCKET"
         else:
-            match_result = await match(extracted, employee_id, report_id, claim_ledger)
+            match_result = await match(
+                extracted,
+                employee_id,
+                report_id,
+                claim_ledger,
+                available_transactions=available_transactions,
+            )
             if match_result.txn_id:
                 extracted.payment_type = "CORPORATE_CARD"
 

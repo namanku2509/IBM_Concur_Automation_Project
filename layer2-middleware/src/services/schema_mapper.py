@@ -57,9 +57,17 @@ def build_expense_input(
     raw_type = extracted.expense_type
     expense_type = "MEAL" if raw_type == "MEALS" else raw_type
 
-    # Only the four types Layer 3 accepts
+    # Layer 3 accepts four types: HOTEL, MEAL, TAXI, FLIGHT.
+    # REGISTRATION is a Layer-2-only type (for conference/training fees); it is
+    # treated as a generic MEAL expense so it still gets submitted rather than
+    # silently dropped.  Log a warning so operators can see the downgrade.
     if expense_type not in ("HOTEL", "MEAL", "TAXI", "FLIGHT"):
-        expense_type = "TAXI"   # safest fallback
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "schema_mapper: expense_type=%r is not a Layer 3 type — mapping to MEAL",
+            expense_type,
+        )
+        expense_type = "MEAL"
 
     # Build type-specific detail sub-object
     itemization = None

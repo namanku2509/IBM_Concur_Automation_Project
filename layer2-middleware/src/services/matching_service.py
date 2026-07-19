@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Sequence
 
 from src.models.concur_models import AvailableTransaction
 from src.models.receipt_models import ExtractedExpense
@@ -94,6 +94,7 @@ async def match(
     employee_id: str,
     report_id: str,
     claim_ledger: Optional[_ClaimLedger] = None,
+    available_transactions: Optional[Sequence[AvailableTransaction]] = None,
 ) -> MatchResult:
     """
     Stage 4 — Transaction matching.
@@ -106,15 +107,18 @@ async def match(
     """
     from src.services.concur_client import fetch_available_transactions
 
-    try:
-        transactions = await fetch_available_transactions(employee_id, report_id)
-    except Exception as exc:
-        logger.warning(
-            "Could not fetch available transactions from Layer 3: %s "
-            "— proceeding with no match.",
-            exc,
-        )
-        return MatchResult(txn_id=None, confidence=0.0)
+    if available_transactions is None:
+        try:
+            transactions = await fetch_available_transactions(employee_id, report_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not fetch available transactions from Layer 3: %s "
+                "— proceeding with no match.",
+                exc,
+            )
+            return MatchResult(txn_id=None, confidence=0.0)
+    else:
+        transactions = list(available_transactions)
 
     if not transactions:
         logger.info("No available card transactions to match against.")
@@ -151,6 +155,10 @@ async def match(
             else extracted.transaction_date
         )
         ds = score_date(receipt_date, txn.transaction_date)
+        # Layer 3 card transactions don't carry a city field, so txn_city is
+        # always None.  score_city returns 0.5 (neutral) in that case — this is
+        # intentional: the city dimension doesn't penalise or reward any match,
+        # which is correct since we have no ground truth for the card city.
         cs = score_city(extracted.city, None)
 
         composite = round(vs * _W_VENDOR + as_ * _W_AMOUNT + ds * _W_DATE + cs * _W_CITY, 4)

@@ -373,36 +373,24 @@ def process_expenses(
                 date_tolerance_days=settings.card_match_date_tolerance_days,
             )
             if matched_txn:
-                if matched_txn.status == "MATCHED":
-                    # Already linked to another expense
-                    exp_warnings.append(ValidationWarning(
-                        code=WarningCode.CARD_ALREADY_MATCHED,
-                        message=(
-                            f"Card transaction {matched_txn.id!r} "
-                            f"({matched_txn.vendor} {matched_txn.currency} {matched_txn.amount:,.2f}) "
-                            "is already linked to another expense."
-                        ),
-                        severity=WarningSeverity.WARNING,
-                    ))
-                else:
-                    matched_card_id = matched_txn.id
-                    if expense_status != "MANUAL_REVIEW":
-                        expense_status = "MATCHED"
-                    audit_service.log_event(
-                        event_type=AuditEvent.CARD_MATCHED,
-                        entity_type=AuditEntity.CARD_TXN,
-                        entity_id=matched_txn.id,
-                        employee_id=employee_id,
-                        description=(
-                            f"Card transaction {matched_txn.id!r} matched to "
-                            f"expense for {expense_input.vendor!r}."
-                        ),
-                        db=db,
-                        metadata_dict={
-                            "cardTransactionId": matched_txn.id,
-                            "vendor": expense_input.vendor,
-                        },
-                    )
+                matched_card_id = matched_txn.id
+                if expense_status != "MANUAL_REVIEW":
+                    expense_status = "MATCHED"
+                audit_service.log_event(
+                    event_type=AuditEvent.CARD_MATCHED,
+                    entity_type=AuditEntity.CARD_TXN,
+                    entity_id=matched_txn.id,
+                    employee_id=employee_id,
+                    description=(
+                        f"Card transaction {matched_txn.id!r} matched to "
+                        f"expense for {expense_input.vendor!r}."
+                    ),
+                    db=db,
+                    metadata_dict={
+                        "cardTransactionId": matched_txn.id,
+                        "vendor": expense_input.vendor,
+                    },
+                )
             else:
                 if expense_status != "MANUAL_REVIEW":
                     expense_status = "PENDING"
@@ -445,10 +433,6 @@ def process_expenses(
             card_transaction_id=matched_card_id,
         )
         expense_repo.create(new_expense, db)
-
-        # Link matched card transaction
-        if matched_card_id:
-            card_transaction_repo.mark_matched(matched_card_id, expense_id, db)
 
         # Link receipt if provided
         receipt_id_for_expense: Optional[str] = None

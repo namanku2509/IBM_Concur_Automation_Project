@@ -1,5 +1,111 @@
 .report-folder-page { background: #f7f9f8; display: flex; font-family: 'DM Sans', Arial, sans-serif; min-height: 100vh; }
-.report-folder-main { flex: 1; margin: 0 auto; max-width: 1080px; min-width: 0; padding: 38px 42px 48px; }
+.report-folder-main { flex: 1; min-width: 0; padding: 38px 42px 48px; overflow-y: auto; }
+
+/* ── Right status sidebar ─────────────────────────────────────────────────── */
+.status-sidebar {
+  background: #fff;
+  border-left: 1px solid #e8edeb;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-width: 320px;
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  width: 320px;
+}
+
+.ss-section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: .09em;
+  color: #7a9080; text-transform: uppercase;
+  margin: 0 0 14px;
+}
+
+/* ── Pipeline steps in sidebar ─────────────────────────────────────────────── */
+.ss-pipeline {
+  border-bottom: 1px solid #e8edeb;
+  padding: 20px 18px 18px;
+}
+.ss-steps { display: flex; flex-direction: column; gap: 0; }
+.ss-step {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 9px 0;
+  border-bottom: 1px solid #f0f3f2;
+}
+.ss-step:last-child { border-bottom: none; }
+
+.ss-dot-col {
+  display: flex; flex-direction: column; align-items: center;
+  flex-shrink: 0; width: 24px;
+}
+.ss-dot {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; flex-shrink: 0;
+  border: 2px solid #cbd2d0; background: #f7f9f8; color: #88928f;
+}
+.ss-step--active .ss-dot { background: #5bbf67; border-color: #5bbf67; color: #fff; }
+.ss-step--done   .ss-dot { background: #276f3b; border-color: #276f3b; color: #fff; }
+.ss-step--error  .ss-dot { background: #d84f4f; border-color: #d84f4f; color: #fff; }
+
+.ss-connector {
+  width: 2px; flex: 1; min-height: 8px;
+  background: #e9eded; margin: 2px 0;
+}
+.ss-connector--done { background: #73ca7c; }
+
+.ss-step-body { flex: 1; min-width: 0; padding-top: 2px; }
+.ss-step-label {
+  display: block; font-size: 11px; font-weight: 700; color: #3b4750; line-height: 1.3;
+}
+.ss-step-desc {
+  display: block; font-size: 10px; color: #929ba2; margin-top: 1px; line-height: 1.3;
+}
+.ss-step-stat  { display: block; font-size: 10px; color: #35914a; font-weight: 700; margin-top: 2px; }
+.ss-step--active .ss-step-label { color: #398949; }
+.ss-step--done   .ss-step-label { color: #276f3b; }
+.ss-step--error  .ss-step-label { color: #c54040; }
+
+/* ── Activity log ─────────────────────────────────────────────────────────── */
+.ss-log {
+  flex: 1;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid #e8edeb;
+}
+.ss-log-entries {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ss-log-empty { color: #9aa8a5; font-size: 11px; font-style: italic; }
+.ss-log-entry {
+  display: flex; flex-direction: column; gap: 2px;
+  background: #f7f9f8; border-radius: 7px; padding: 8px 10px;
+  border-left: 3px solid #e0e6e3;
+}
+.ss-step--done  ~ .ss-log-entry,
+.ss-log-entry { border-left-color: #73ca7c; }
+.ss-log-ts   { font-size: 9px; color: #9aa8a5; font-variant-numeric: tabular-nums; }
+.ss-log-text { font-size: 11px; color: #3b4750; line-height: 1.4; white-space: pre-wrap; }
+
+/* ── WXO widget (bottom of sidebar, shown only when configured) ──────────── */
+.ss-wxo { flex-shrink: 0; }
+.ss-wxo .chat-panel {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 280px;
+  position: static;
+  border-left: none;
+  border-top: 1px solid #e8edeb;
+}
+.ss-wxo .wxo-unavailable { display: none; } /* hide "not configured" text — sidebar already shows pipeline */
+
 .report-header-tile, .pipeline-tracker, .available-expenses-tile, .receipt-upload-tile, .processed-expenses-tile { background: #fff !important; border: 1px solid #e8edeb; border-radius: 12px; box-shadow: none; }
 .report-header-tile { border-left: 4px solid #63bf70; margin-bottom: 20px; padding: 23px !important; }
 .report-header-top { align-items: flex-start; display: flex; gap: 16px; justify-content: space-between; margin-bottom: 13px; }
@@ -8,8 +114,14 @@
 .available-expenses-section, .receipt-upload-section, .processed-expenses-section, .warnings-section { margin-bottom: 23px; }
 .pipeline-tracker { margin-bottom: 23px; padding: 20px 22px; }.pipeline-title { color: #6d7976; font-size: 10px; font-weight: 700; letter-spacing: 1.1px; margin: 0 0 19px; text-transform: uppercase; }.pipeline-steps { align-items: flex-start; display: flex; overflow-x: auto; }.pipeline-step { align-items: center; display: flex; flex: 1; flex-direction: column; min-width: 100px; }.pipeline-step-indicator { align-items: center; display: flex; justify-content: center; margin-bottom: 9px; position: relative; width: 100%; }.pipeline-step-dot { align-items: center; border-radius: 50%; display: flex; flex-shrink: 0; font-size: 11px; font-weight: 700; height: 29px; justify-content: center; transition: .25s; width: 29px; z-index: 1; }.pipeline-step-line { flex: 1; height: 2px; margin: 0 -4px; }.pipeline-step-line--done { background: #73ca7c; }.pipeline-step-line--idle { background: #e9eded; }.pipeline-step--idle .pipeline-step-dot { background: #f7f9f8; border: 2px solid #cbd2d0; color: #88928f; }.pipeline-step--active .pipeline-step-dot { background: #5bbf67; border: 2px solid #5bbf67; color: #fff; }.pipeline-step--done .pipeline-step-dot { background: #276f3b; border: 2px solid #276f3b; color: #fff; }.pipeline-step--error .pipeline-step-dot { background: #d84f4f; border: 2px solid #d84f4f; color: #fff; }.pipeline-step-body { align-items: center; display: flex; flex-direction: column; gap: 2px; padding: 0 5px; text-align: center; }.pipeline-step-label { color: #3b4750; font-size: 10px; font-weight: 700; line-height: 1.25; }.pipeline-step-desc { color: #929ba2; font-size: 9px; line-height: 1.3; }.pipeline-step-stat { color: #35914a; font-size: 9px; font-weight: 700; margin-top: 2px; }.pipeline-step--active .pipeline-step-label { color: #398949; }.pipeline-step--done .pipeline-step-label { color: #276f3b; }.pipeline-step--error .pipeline-step-label { color: #c54040; }
 .confirmation-tile { background: #eaf8ec !important; border: 1px solid #cdebd1; border-left: 4px solid #55b763; border-radius: 9px; margin-bottom: 20px; padding: 17px !important; }.confirmation-title { color: #256c37; font-size: 13px; font-weight: 700; margin: 0 0 4px; }.confirmation-id { color: #477a53; font-size: 11px; margin: 0; }
-.available-expenses-tile, .processed-expenses-tile { overflow: hidden; padding: 0 !important; }.available-expenses-tile .cds--data-table, .processed-expenses-tile .cds--data-table { background: #fff; }.available-expenses-tile th, .processed-expenses-tile th { background: #f7f9f8; color: #75807c; font-size: 10px; font-weight: 700; }.available-expenses-tile td, .processed-expenses-tile td { color: #35424a; font-size: 11px; }.available-expenses-tile .cds--tag, .processed-expenses-tile .cds--tag { border-radius: 10px; font-size: 9px; }
+.available-expenses-tile, .processed-expenses-tile { overflow: hidden; padding: 0 !important; }.available-expenses-tile .cds--data-table, .processed-expenses-tile .cds--data-table { background: #fff; }.available-expenses-tile th, .processed-expenses-tile th { background: #f7f9f8; color: #75807c; font-size: 10px; font-weight: 700; }.available-expenses-tile td, .processed-expenses-tile td { color: #35424a; font-size: 11px; }.available-expenses-tile .cds--tag, .processed-expenses-tile .cds--tag { border-radius: 10px; font-size: 9px; }.processed-expenses-remove-button { align-items: center; background: transparent; border: 1px solid #d7dfdb; border-radius: 999px; color: #6d7976; cursor: pointer; display: inline-flex; font-size: 14px; height: 22px; justify-content: center; margin-left: 10px; padding: 0; width: 22px; }.processed-expenses-remove-button:hover { background: #f3f6f5; color: #23323d; }
 .submit-bar { align-items: center; background: #fff; border: 1px solid #e8edeb; border-radius: 10px; display: flex; gap: 12px; margin-top: 5px; padding: 14px 16px; }.submit-bar-info { color: #64716c; flex: 1; font-size: 11px; line-height: 1.45; }.submit-bar .cds--btn { border-radius: 7px; font-size: 11px; min-height: 36px; }.submit-bar .cds--btn--primary { background: #263d34; }.submit-bar .cds--btn--primary:hover { background: #172d24; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }.pipeline-spinner { animation: spin 1s linear infinite; display: inline-block; font-style: normal; }
-@media (max-width: 980px) { .report-folder-page { display: block; }.report-folder-main { max-width: none; padding: 30px; } }.report-header-top { flex-direction: column; }.report-header-meta { justify-content: flex-start; }
+@media (max-width: 980px) {
+  .report-folder-page { display: block; }
+  .report-folder-main { padding: 30px; }
+  .status-sidebar { display: none; }
+}
+.report-header-top { flex-direction: column; }
+.report-header-meta { justify-content: flex-start; }
 @media (max-width: 650px) { .report-folder-main { padding: 24px 17px 32px; }.report-header-tile { padding: 18px !important; }.report-header-name { font-size: 20px; }.pipeline-tracker { padding: 17px 12px; }.pipeline-step { min-width: 88px; }.pipeline-step-desc { display: none; }.submit-bar { align-items: stretch; flex-wrap: wrap; }.submit-bar-info { flex-basis: 100%; }.submit-bar .cds--btn { flex: 1; } }

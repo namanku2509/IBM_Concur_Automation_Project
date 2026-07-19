@@ -50,8 +50,21 @@ function addHash(reportId, fileHash) {
   if (folder && fileHash) folder.processedHashes.add(fileHash);
 }
 
+function getAllProcessedHashes(reportId) {
+  const folder = store[reportId];
+  if (!folder) return new Set();
+  return new Set(folder.processedExpenses.map(expense => expense.fileHash).filter(Boolean));
+}
+
 function get(reportId) {
   return store[reportId] || null;
+}
+
+/** Return all reports, optionally filtered by employeeId. */
+function getAll(employeeId) {
+  const all = Object.values(store);
+  if (employeeId) return all.filter(r => r.employeeId === employeeId);
+  return all;
 }
 
 function update(reportId, changes) {
@@ -64,4 +77,4 @@ function setStatus(reportId, status) {
   return update(reportId, { status });
 }
 
-module.exports = { create, get, update, setStatus, hasHash, addHash };
+module.exports = { create, get, getAll, update, setStatus, hasHash, addHash, getAllProcessedHashes };

@@ -18,9 +18,10 @@ const HEADERS = [
   { key: 'transactionDate',header: 'Date'      },
   { key: 'matchStatus',    header: 'Match'     },
   { key: 'ocrStatus',      header: 'OCR'       },
+  { key: 'actions',        header: ''          },
 ];
 
-function ProcessedExpensesTable({ expenses }) {
+function ProcessedExpensesTable({ expenses, onRemove }) {
   if (!expenses || expenses.length === 0) return null;
 
   const rows = expenses.map((e, i) => {
@@ -29,17 +30,20 @@ function ProcessedExpensesTable({ expenses }) {
     const ocrOk     = hasAmount && hasVendor;
 
     // Determine payment label:
+    //   duplicate upload               → DUPLICATE
     //   matched to card txn            → CARD
     //   came from cash drop zone       → CASH
     //   card zone, no match found      → UNMATCHED
-    const matchLabel = e.matchedTxnId
-      ? 'CARD'
-      : e.fromCashZone
-        ? 'CASH'
-        : 'UNMATCHED';
+    const matchLabel = e.status === 'duplicate'
+      ? 'DUPLICATE'
+      : e.matchedTxnId
+        ? 'CARD'
+        : e.fromCashZone
+          ? 'CASH'
+          : 'UNMATCHED';
 
     return {
-      id:              e.expenseId || String(i),
+      id:              e.duplicateEntryId || e.expenseId || String(i),
       expenseType:     e.expenseType   || '—',
       vendor:          hasVendor ? e.vendor : '(not extracted)',
       amount:          hasAmount
@@ -48,6 +52,7 @@ function ProcessedExpensesTable({ expenses }) {
       transactionDate: e.transactionDate || '—',
       matchStatus:     matchLabel,
       ocrStatus:       ocrOk ? 'OK' : 'FAILED',
+      actions:         e.id,
     };
   });
 
@@ -72,7 +77,7 @@ function ProcessedExpensesTable({ expenses }) {
                     <TableCell key={cell.id}>
                       {cell.info.header === 'matchStatus' ? (
                         <Tag
-                          type={cell.value === 'CARD' ? 'green' : cell.value === 'CASH' ? 'teal' : 'red'}
+                          type={cell.value === 'CARD' ? 'green' : cell.value === 'CASH' ? 'teal' : cell.value === 'DUPLICATE' ? 'purple' : 'red'}
                           size="sm"
                         >
                           {cell.value}
@@ -83,6 +88,15 @@ function ProcessedExpensesTable({ expenses }) {
                         </Tag>
                       ) : cell.info.header === 'expenseType' ? (
                         <Tag type="blue" size="sm">{cell.value}</Tag>
+                      ) : cell.info.header === 'actions' ? (
+                        <button
+                          type="button"
+                          className="processed-expenses-remove-button"
+                          onClick={() => onRemove?.(row.id)}
+                          aria-label="Remove uploaded receipt"
+                        >
+                          ×
+                        </button>
                       ) : cell.value}
                     </TableCell>
                   ))}

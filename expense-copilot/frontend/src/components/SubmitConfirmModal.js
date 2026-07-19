@@ -123,15 +123,21 @@ function SubmitConfirmModal({ meta, expenses, warnings, policy, onConfirm, onCan
     setJustifications(prev => ({ ...prev, [key]: value }));
   }
 
-  const totalAmount  = expenses.reduce((s, e) => s + (e.amount || 0), 0);
-  const matchedCount = expenses.filter(e => e.matchedTxnId).length;
-  const policyLabel  = { STANDARD: 'Standard', EXECUTIVE: 'Executive' }[policy] || policy;
+  // All valid expenses (exclude status=error rows — they were already filtered by BFF)
+  const validExpenses   = expenses.filter(e => e.status !== 'error');
+  const matchedExpenses = validExpenses.filter(e => e.matchedTxnId);
+  const cashExpenses    = validExpenses.filter(e => !e.matchedTxnId && e.status !== 'duplicate');
+  const matchedCount    = matchedExpenses.length;
+  const totalAmount     = validExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const policyLabel     = { STANDARD: 'Standard', EXECUTIVE: 'Executive' }[policy] || policy;
 
-  // Run policy checks for every expense
-  const expenseChecks = expenses.map(e => ({
-    expense: e,
-    checks: checkExpense(e, policy),
-  }));
+  // Run policy checks for ALL valid expenses (card + cash), not just matched ones.
+  const expenseChecks = validExpenses
+    .filter(e => e.status !== 'duplicate')
+    .map(e => ({
+      expense: e,
+      checks: checkExpense(e, policy),
+    }));
 
   // Aggregate: how many checks pass vs fail across all expenses
   const allChecks    = expenseChecks.flatMap(ec => ec.checks);
@@ -147,7 +153,7 @@ function SubmitConfirmModal({ meta, expenses, warnings, policy, onConfirm, onCan
 
   // Also include any server-side warnings (from Layer 3 / Layer 2)
   const serverWarnings = (warnings || []).filter(
-    w => w.code !== 'RECEIPT_PROCESSING_FAILED'
+    w => w.code !== 'RECEIPT_PROCESSING_FAILED' && w.code !== 'DUPLICATE_RECEIPT'
   );
 
   return (
@@ -185,11 +191,11 @@ function SubmitConfirmModal({ meta, expenses, warnings, policy, onConfirm, onCan
             </div>
             <div className="scm-meta-item">
               <span className="scm-meta-label">Expenses</span>
-              <span className="scm-meta-value">{expenses.length} item{expenses.length !== 1 ? 's' : ''}</span>
+              <span className="scm-meta-value">{validExpenses.filter(e => e.status !== 'duplicate').length} item{validExpenses.filter(e => e.status !== 'duplicate').length !== 1 ? 's' : ''}</span>
             </div>
             <div className="scm-meta-item">
               <span className="scm-meta-label">Card matched</span>
-              <span className="scm-meta-value">{matchedCount} / {expenses.length}</span>
+              <span className="scm-meta-value">{matchedCount} matched · {cashExpenses.length} cash</span>
             </div>
           </div>
 
