@@ -197,6 +197,22 @@ router.post('/', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/report/all?employeeId=EMP001
+// Returns all report folders for the given employee (or all if omitted).
+// Must be defined BEFORE /:reportId so "all" is not treated as a reportId.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/all', (req, res) => {
+  const { employeeId } = req.query;
+  const reports = reportStore.getAll(employeeId || null);
+  // Strip processedHashes (Set — not JSON-serialisable) before sending
+  const safe = reports.map(r => {
+    const { processedHashes, ...rest } = r;
+    return rest;
+  });
+  res.json(safe);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/report/:reportId
 // Returns the current state of the report folder from session.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -264,11 +280,19 @@ router.post('/:reportId/receipts', upload.array('files'), async (req, res) => {
   // this report session, regardless of which drop zone they came from.
   const crypto = require('crypto');
   const duplicateFilenames = [];
+  const duplicateExpenses = [];
   const uniqueFiles = [];
   for (const file of files) {
     const hash = crypto.createHash('sha256').update(file.buffer).digest('hex');
     if (reportStore.hasHash(folder.reportId, hash)) {
       duplicateFilenames.push(file.originalname);
+      const originalExpense = (folder.processedExpenses || []).find(expense => expense.fileHash === hash);
+      duplicateExpenses.push({
+        ...(originalExpense || {}),
+        filename: file.originalname,
+        fileHash: hash,
+        status: 'duplicate',
+      });
     } else {
       file._sha256 = hash;   // stash for registration after success
       uniqueFiles.push(file);
@@ -276,9 +300,18 @@ router.post('/:reportId/receipts', upload.array('files'), async (req, res) => {
   }
 
   if (uniqueFiles.length === 0) {
-    return res.status(409).json({
-      error: `All ${files.length} receipt${files.length !== 1 ? 's' : ''} have already been added to this report.`,
-      duplicates: duplicateFilenames,
+    return res.json({
+      reportId: folder.reportId,
+      processed: duplicateExpenses.length,
+      matched: 0,
+      unmatched: 0,
+      expenses: duplicateExpenses,
+      warnings: duplicateFilenames.map(name => ({
+        code: 'DUPLICATE_RECEIPT',
+        severity: 'WARNING',
+        message: `${name}: Already added to this report — skipped.`,
+      })),
+      validationSummary: null,
     });
   }
 
@@ -336,17 +369,17 @@ router.post('/:reportId/receipts', upload.array('files'), async (req, res) => {
     ];
 
     reportStore.update(folder.reportId, {
-      processedExpenses,
-      warnings: allWarnings,
+      processedExpenses: [...(folder.processedExpenses || []), ...processedExpenses],
+      warnings: [...(folder.warnings || []), ...allWarnings],
       status: 'REVIEW',
     });
 
     res.json({
       reportId:          folder.reportId,
-      processed:         data.processed  ?? rawResults.length,
+      processed:         (data.processed  ?? rawResults.length) + duplicateExpenses.length,
       matched:           data.matched    ?? 0,
       unmatched:         data.unmatched  ?? rawResults.length,
-      expenses:          processedExpenses,
+      expenses:          [...processedExpenses, ...duplicateExpenses],
       warnings:          allWarnings,
       validationSummary: data.summary    ?? null,
     });

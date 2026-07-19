@@ -48,11 +48,9 @@ def get_card_transactions(
             ).model_dump(by_alias=True),
         )
 
+    txns = card_transaction_repo.get_all_for_employee(employee_id, db)
     if status:
-        txns = card_transaction_repo.get_all_for_employee(employee_id, db)
         txns = [t for t in txns if t.status == status.upper()]
-    else:
-        txns = card_transaction_repo.get_all_for_employee(employee_id, db)
 
     return CardTransactionListResponse(
         employee_id=employee_id,
@@ -65,8 +63,8 @@ def get_card_transactions(
                 currency=t.currency,
                 transaction_date=t.transaction_date,
                 card_last_four=t.card_last_four,
-                status=CardTxnStatus(t.status),
-                matched_expense_id=t.matched_expense_id,
+                status=CardTxnStatus.AVAILABLE,
+                matched_expense_id=None,
                 created_at=t.created_at,
             )
             for t in txns

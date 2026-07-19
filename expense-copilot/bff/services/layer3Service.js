@@ -8,6 +8,12 @@
  *   GET    /api/v4/card-transactions?employeeId=<id>      — list card transactions
  *   POST   /api/v4/expense-reports/:id/expenses           — bulk submit expenses
  *   PATCH  /api/v4/expense-reports/:id/submit             — transition to SUBMITTED
+ *   POST   /api/v4/admin/card-transactions                — inject card transaction (test harness)
+ *
+ * NOTE: The inject endpoint lives under /api/v4 because card_transactions.router is
+ * registered with prefix="/api/v4" in concur-stub/main.py (line 148). The separate
+ * admin.router (HTML dashboard) has its own prefix="/admin" and is registered without
+ * an extra prefix — those are GET-only HTML pages and must NOT be confused with this.
  */
 const axios = require('axios');
 const { LAYER3_BASE_URL } = require('../config');
@@ -47,6 +53,15 @@ async function getTransactions(employeeId, { policy } = {}) {
   };
 }
 
+/** Add a corporate-card transaction created by the travel booking flow. */
+async function createCardTransaction(transaction) {
+  // Path is /api/v4/admin/card-transactions — the card_transactions router is
+  // mounted under prefix="/api/v4" in concur-stub/main.py, so the full path
+  // includes that prefix even though the route decorator reads "/admin/card-transactions".
+  const response = await L3.post('/api/v4/admin/card-transactions', transaction);
+  return response.data;
+}
+
 /**
  * Bulk-submit all processed expenses to Layer 3.
  * Layer 3 path: POST /api/v4/expense-reports/:id/expenses
@@ -71,4 +86,4 @@ async function submitReport(reportId) {
   return response.data;
 }
 
-module.exports = { createReport, getTransactions, submitExpenses, submitReport };
+module.exports = { createReport, getTransactions, createCardTransaction, submitExpenses, submitReport };
