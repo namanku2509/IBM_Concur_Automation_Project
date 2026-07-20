@@ -57,6 +57,17 @@ export async function submitReport(reportId, policyJustifications = {}) {
 }
 
 /**
+ * Removes a processed expense from the BFF session store and frees its
+ * file hash so the same receipt can be re-uploaded.
+ * @param {string} reportId
+ * @param {string} expenseId
+ */
+export async function removeExpense(reportId, expenseId) {
+  const response = await axios.delete(`${BFF_BASE}/report/${reportId}/expenses/${expenseId}`);
+  return response.data;
+}
+
+/**
  * Fetches current report folder state from BFF.
  * @param {string} reportId
  * @returns {Object} - full report folder object

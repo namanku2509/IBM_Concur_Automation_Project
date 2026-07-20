@@ -18,6 +18,7 @@ import {
   getTransactions,
   processReceipts,
   submitReport,
+  removeExpense,
 } from '../services/reportService';
 
 import './ReportFolderPage.css';
@@ -458,9 +459,14 @@ function ReportFolderPage() {
   const canSubmit = folderStatus === 'REVIEW' && !hasPolicyErrors && !submitting && allTxnsMatched;
 
   function handleRemoveExpense(expenseId) {
+    // Remove from local UI state immediately (optimistic)
     setProcessedExpenses(prev => prev.filter(expense => (expense.duplicateEntryId || expense.expenseId) !== expenseId));
     setWarnings(prev => prev.filter(w => w.code !== 'DUPLICATE_RECEIPT'));
     setRemovedExpenseIds(prev => [...prev, expenseId]);
+
+    // Tell the BFF to free the file hash so re-uploading the same receipt works.
+    // Fire-and-forget — a failure here doesn't affect the UI (the row is already gone).
+    removeExpense(reportId, expenseId).catch(() => {});
   }
 
   // ── Render ────────────────────────────────────────────────────────────────

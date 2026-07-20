@@ -522,4 +522,23 @@ router.post('/:reportId/submit', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/report/:reportId/expenses/:expenseId
+// Removes a processed expense from the session store AND frees its file hash
+// so the same receipt can be re-uploaded and re-matched.
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/:reportId/expenses/:expenseId', (req, res) => {
+  const folder = reportStore.get(req.params.reportId);
+  if (!folder) {
+    return res.status(404).json({ error: 'Report not found', reportId: req.params.reportId });
+  }
+
+  const removed = reportStore.removeExpense(folder.reportId, req.params.expenseId);
+  if (!removed) {
+    return res.status(404).json({ error: 'Expense not found', expenseId: req.params.expenseId });
+  }
+
+  res.json({ removed: true, expenseId: req.params.expenseId, fileHash: removed.fileHash || null });
+});
+
 module.exports = router;

@@ -53,6 +53,29 @@ function addHash(reportId, fileHash) {
   if (folder && fileHash) folder.processedHashes.add(fileHash);
 }
 
+/** Remove a file hash so the same file can be re-uploaded after the expense is removed. */
+function removeHash(reportId, fileHash) {
+  const folder = store[reportId];
+  if (folder && fileHash) folder.processedHashes.delete(fileHash);
+}
+
+/** Remove a single processed expense by its expenseId (or duplicateEntryId). */
+function removeExpense(reportId, expenseId) {
+  const folder = store[reportId];
+  if (!folder) return null;
+  const expense = (folder.processedExpenses || []).find(
+    e => (e.duplicateEntryId || e.expenseId) === expenseId
+  );
+  if (expense) {
+    // Free the file hash so the same receipt can be re-uploaded
+    if (expense.fileHash) removeHash(reportId, expense.fileHash);
+    folder.processedExpenses = folder.processedExpenses.filter(
+      e => (e.duplicateEntryId || e.expenseId) !== expenseId
+    );
+  }
+  return expense || null;
+}
+
 function getAllProcessedHashes(reportId) {
   const folder = store[reportId];
   if (!folder) return new Set();
@@ -80,4 +103,4 @@ function setStatus(reportId, status) {
   return update(reportId, { status });
 }
 
-module.exports = { create, get, getAll, update, setStatus, hasHash, addHash, getAllProcessedHashes };
+module.exports = { create, get, getAll, update, setStatus, hasHash, addHash, removeHash, removeExpense, getAllProcessedHashes };
