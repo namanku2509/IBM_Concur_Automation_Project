@@ -146,6 +146,22 @@ router.get('/state', (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/travel/card-transactions?employeeId=EMP001
+// Proxy to Layer 3 so the travel dashboard can fetch card txns same-origin.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/card-transactions', async (req, res) => {
+  const id = empId(req.query.employeeId);
+  try {
+    const data = await layer3.getTransactions(id);
+    res.json(data);
+  } catch (err) {
+    const status  = err.response?.status || 502;
+    const message = err.response?.data?.detail || err.response?.data?.error || 'Failed to fetch transactions';
+    res.status(status).json({ error: message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Routes — Flights
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/flights/search', (req, res) => {

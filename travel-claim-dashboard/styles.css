@@ -577,3 +577,69 @@ h2 { font: 700 17px Manrope; }
   .list-head, .list-row { grid-template-columns: 2fr 1fr 1fr; }
   .list-head span:nth-child(3), .list-row span:nth-child(3) { display: none; }
 }
+
+/* ── Dashboard card-transaction checklist ────────────────────────────────── */
+.dash-txn-section { }
+
+.dash-txn-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; flex-wrap: wrap; gap: 10px;
+}
+.dash-txn-hd h2 { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.dash-txn-hd-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.dash-select-all {
+  font-size: 12px; color: #32a84a; font-weight: 600; cursor: pointer; user-select: none;
+}
+.dash-select-all:hover { text-decoration: underline; }
+
+.dash-selected-label { font-size: 12px; color: #68788a; }
+
+.dash-txn-table-wrap {
+  background: #fff; border: 1px solid #e8eceb; border-radius: 12px; overflow: hidden;
+}
+.dash-txn-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dash-txn-table thead { background: #f8faf9; }
+.dash-txn-table th {
+  padding: 10px 14px; text-align: left;
+  font-size: 11px; font-weight: 700; color: #7a9080;
+  text-transform: uppercase; letter-spacing: .04em;
+  border-bottom: 1px solid #e8eceb;
+}
+.dash-txn-table td { padding: 11px 14px; border-bottom: 1px solid #f0f2f5; vertical-align: middle; }
+.dash-txn-table tbody tr:last-child td { border-bottom: none; }
+.dash-txn-table tbody tr:hover td { background: #f8faf9; }
+
+.dash-txn-table input[type=checkbox] {
+  width: 15px; height: 15px; cursor: pointer; accent-color: #1a2e24;
+}
+.dash-txn-vendor { font-weight: 600; color: #1a2631; }
+.dash-txn-amount { font-weight: 700; color: #1a2631; text-align: right; }
+.dash-txn-id { font-size: 10px; color: #7a9080; background: #f4f6f5; padding: 2px 5px; border-radius: 3px; }
+.dash-txn-empty { text-align: center; padding: 20px; color: #7a9080; font-style: italic; }
+
+.dash-txn-claimed-dot { color: #1e6b30; font-weight: 700; font-size: 13px; }
+
+.dash-badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.dash-badge-unclaimed { background: #fff4e0; color: #9a5700; }
+.dash-badge-claimed   { background: #e6f7ea; color: #1e6b30; }
+
+/* ── Selected-txns notice banner (New Claim page) ────────────────────────── */
+.selected-txns-notice {
+  background: #e6f7ea; border: 1px solid #b2ddb7; border-radius: 9px;
+  padding: 11px 16px; font-size: 13px; color: #1a2631;
+  margin-bottom: 20px; line-height: 1.5;
+}
+.selected-txns-notice--warn {
+  background: #fff8e6; border-color: #f0d488; color: #6b4e00;
+}
+.selected-txns-ids { display: block; margin-top: 6px; }
+.selected-txns-ids code {
+  font-size: 11px; background: #fff; border: 1px solid #b2ddb7;
+  border-radius: 3px; padding: 1px 5px; margin-right: 4px;
+  display: inline-block; margin-bottom: 3px;
+}

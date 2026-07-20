@@ -409,11 +409,14 @@ function ReportFolderPage() {
         `${data.message || ''}`
       );
       // Notify the travel dashboard (same browser, any tab) so it refreshes
-      // My Claims and the dashboard stats without a manual reload.
+      // and moves the claimed txn IDs from Available → Claimed.
       try {
         if (typeof BroadcastChannel !== 'undefined') {
           const bc = new BroadcastChannel('roam-expense');
-          bc.postMessage({ type: 'report-submitted', reportId });
+          // Include selectedTxnIds so the dashboard can immediately move those
+          // rows from "Available for claim" to "Claimed transactions".
+          const selectedTxnIds = transactions.map(t => t.transactionId).filter(Boolean);
+          bc.postMessage({ type: 'report-submitted', reportId, selectedTxnIds });
           bc.close();
         }
       } catch (_) { /* BroadcastChannel not supported — silently ignore */ }

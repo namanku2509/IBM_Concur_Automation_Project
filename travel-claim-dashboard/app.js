@@ -9,6 +9,12 @@ const BFF         = '';          // same origin — nginx / BFF serves this file
 // ── State ──────────────────────────────────────────────────────────────────
 let S = { bookings: [], hotelBookings: [], claims: [] };
 
+// ── Card transaction state — persisted across page navigations ─────────────
+// claimedTxnIds: set of transactionIds the user has submitted via this session
+// (populated from BroadcastChannel report-submitted events + /api/report/all)
+let _availableTxns = [];   // AvailableTransaction[] fetched from Layer 3
+let _claimedTxnIds = new Set();  // txn IDs that appear in a SUBMITTED report
+
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const content    = document.getElementById('content');
 const breadcrumb = document.getElementById('breadcrumb');
@@ -61,15 +67,28 @@ async function bff(path, opts = {}) {
 }
 
 async function refresh() {
-  const [state, reports] = await Promise.allSettled([
+  const [state, reports, txns] = await Promise.allSettled([
     api(`/state?employeeId=${EMPLOYEE_ID}`),
     fetch(`${BFF}/api/report/all?employeeId=${EMPLOYEE_ID}`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .catch(() => []),
+    fetch(`${BFF}/api/travel/card-transactions?employeeId=${EMPLOYEE_ID}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : { transactions: [] })
+      .catch(() => ({ transactions: [] })),
   ]);
   S = state.status === 'fulfilled' ? state.value : { bookings: [], hotelBookings: [], claims: [] };
   const raw = reports.status === 'fulfilled' ? reports.value : [];
   S._expenseReports = Array.isArray(raw) ? raw : [];
+
+  // Store all available card transactions
+  const txnData = txns.status === 'fulfilled' ? txns.value : { transactions: [] };
+  _availableTxns = txnData.transactions || [];
+
+  // Rebuild claimed set — any txnId that is in the selectedTxnIds of a SUBMITTED report
+  _claimedTxnIds = new Set();
+  S._expenseReports
+    .filter(r => r.status === 'SUBMITTED')
+    .forEach(r => (r.selectedTxnIds || []).forEach(id => _claimedTxnIds.add(id)));
 }
 
 // ── Drawer ─────────────────────────────────────────────────────────────────
@@ -117,11 +136,16 @@ document.getElementById('refreshBtn').onclick = async () => {
 
 // ── Cross-tab refresh via BroadcastChannel ─────────────────────────────────
 // The React expense folder posts 'report-submitted' when a report is submitted.
-// We listen here and silently refresh state + re-render the active page.
+// We listen here, refresh state, move claimed txns, and re-render.
 if (typeof BroadcastChannel !== 'undefined') {
   const _bc = new BroadcastChannel('roam-expense');
   _bc.onmessage = async (e) => {
     if (e.data?.type === 'report-submitted') {
+      // Move the claimed txn IDs immediately (before full refresh) so the
+      // dashboard updates without waiting for the network round-trip.
+      if (Array.isArray(e.data.selectedTxnIds)) {
+        e.data.selectedTxnIds.forEach(id => _claimedTxnIds.add(id));
+      }
       await refresh();
       const active = document.querySelector('.nav-item.active')?.dataset.page || 'dashboard';
       nav(active);
@@ -142,16 +166,35 @@ document.getElementById('searchInput').oninput = function () {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PAGE: DASHBOARD
+   Centre panel: card transaction checklist (available for claim) +
+                 claimed transactions list below.
 ═══════════════════════════════════════════════════════════════════════════ */
 function pageDashboard() {
-  const allBookings    = [...(S.bookings || []), ...(S.hotelBookings || [])];
-  const expenseReports = S._expenseReports || [];
-  const claimed        = (S.claims || []).length + expenseReports.filter(r => r.status === 'SUBMITTED').length;
-  const unclaimed      = allBookings.filter(b => !b.claimId).length;
-  const totalSpend     = allBookings.reduce((s, b) => s + (b.totalPrice || 0), 0);
-
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+  // Split transactions into available-to-claim vs already claimed
+  const available = _availableTxns.filter(t => !_claimedTxnIds.has(t.transactionId));
+  const claimed   = _availableTxns.filter(t =>  _claimedTxnIds.has(t.transactionId));
+
+  function txnRows(list, selectable) {
+    if (!list.length) return `<tr><td colspan="6" class="dash-txn-empty">None</td></tr>`;
+    return list.map(t => `
+      <tr class="dash-txn-row" data-txn-id="${esc(t.transactionId)}">
+        <td>${selectable
+          ? `<input type="checkbox" class="dash-cb" value="${esc(t.transactionId)}" />`
+          : `<span class="dash-txn-claimed-dot" title="Claimed">✓</span>`}
+        </td>
+        <td><span class="dash-txn-vendor">${esc(t.vendor || '—')}</span></td>
+        <td>${esc(t.transactionDate || '—')}</td>
+        <td class="dash-txn-amount">${money(t.amount)}</td>
+        <td><code class="dash-txn-id">${esc(t.transactionId)}</code></td>
+        <td>${selectable
+          ? `<span class="dash-badge dash-badge-unclaimed">Available</span>`
+          : `<span class="dash-badge dash-badge-claimed">Claimed</span>`}
+        </td>
+      </tr>`).join('');
+  }
 
   content.innerHTML = `
     <div class="page-pad">
@@ -159,92 +202,110 @@ function pageDashboard() {
         <div>
           <p class="eyebrow">IBM TRAVEL &amp; EXPENSE</p>
           <h1>${greeting}, Priya ✦</h1>
-          <p class="sub">Everything in one place — book, claim, track.</p>
-        </div>
-        <button class="btn-primary" id="dashNewClaim">+ New claim</button>
-      </div>
-
-      <div class="stat-row">
-        <div class="stat-card" id="statBookings">
-          <span class="stat-label">Confirmed bookings</span>
-          <span class="stat-num">${allBookings.length}</span>
-          <span class="stat-sub">${unclaimed} awaiting claim</span>
-        </div>
-        <div class="stat-card" id="statClaims">
-          <span class="stat-label">Submitted claims</span>
-          <span class="stat-num">${claimed}</span>
-          <span class="stat-sub">via expense system</span>
-        </div>
-        <div class="stat-card" id="statSpend">
-          <span class="stat-label">Total travel spend</span>
-          <span class="stat-num">${money(totalSpend)}</span>
-          <span class="stat-sub">across all bookings</span>
+          <p class="sub">Select the transactions you want to claim, then click <strong>Claim Now</strong>.</p>
         </div>
       </div>
 
-      <div class="dash-grid">
-        <!-- Recent bookings -->
-        <section class="dash-panel">
-          <div class="panel-hd">
-            <h2>Recent bookings</h2>
-            <button class="btn-link" id="dashViewBookings">View all →</button>
+      <!-- ── Available for claim ─────────────────────────────────────── -->
+      <section class="dash-txn-section">
+        <div class="dash-txn-hd">
+          <h2>Available for claim <span class="count" id="availCount">${available.length}</span></h2>
+          <div class="dash-txn-hd-right">
+            <span class="dash-select-all" id="selectAllBtn">Select all</span>
+            <span class="dash-selected-label" id="selectedLabel">0 selected</span>
+            <button class="btn-primary" id="claimNowBtn" disabled>Claim Now →</button>
           </div>
-          ${recentBookingsHTML(allBookings)}
-        </section>
+        </div>
 
-        <!-- Quick actions -->
-        <section class="dash-panel">
-          <div class="panel-hd"><h2>Quick actions</h2></div>
-          <div class="quick-actions">
-            <button class="qa-card" id="qaBkFlight">
-              <svg viewBox="0 0 24 24"><path d="m22 16-8.5-4.5V5.2a1.5 1.5 0 0 0-3 0v6.3L2 16v2l8.5-2v3.5l-2 1.5v1h7v-1l-2-1.5V16l8.5 2v-2Z"/></svg>
-              <strong>Book flight</strong>
-              <span>Search &amp; book a corporate fare</span>
-            </button>
-            <button class="qa-card" id="qaBkHotel">
-              <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="18" rx="1"/><path d="M9 21V12h6v9M2 9h20"/></svg>
-              <strong>Book hotel</strong>
-              <span>Find policy-approved hotels</span>
-            </button>
-            <button class="qa-card" id="qaNewClaim">
-              <svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h4"/></svg>
-              <strong>New claim</strong>
-              <span>Upload receipts &amp; submit</span>
-            </button>
-            <button class="qa-card" id="qaMyClaims">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>
-              <strong>My claims</strong>
-              <span>Track submitted reports</span>
-            </button>
-          </div>
-        </section>
-      </div>
+        ${available.length === 0
+          ? `<p class="empty">No transactions available for claim.</p>`
+          : `<div class="dash-txn-table-wrap">
+              <table class="dash-txn-table">
+                <thead>
+                  <tr>
+                    <th style="width:36px"></th>
+                    <th>Merchant</th>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Transaction ID</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="availTxnBody">${txnRows(available, true)}</tbody>
+              </table>
+            </div>`}
+      </section>
 
-      <!-- Unclaimed bookings notice -->
-      ${unclaimed > 0 ? `
-      <div class="notice">
-        <span>⚠️</span>
-        <span>You have <b>${unclaimed} confirmed booking${unclaimed !== 1 ? 's' : ''}</b> without a submitted claim.
-          <button class="btn-link" id="dashGoNewClaim">Create a claim now →</button></span>
-      </div>` : ''}
+      <!-- ── Already claimed ────────────────────────────────────────── -->
+      <section class="dash-txn-section" style="margin-top:28px">
+        <div class="dash-txn-hd">
+          <h2>Claimed transactions <span class="count">${claimed.length}</span></h2>
+        </div>
+        ${claimed.length === 0
+          ? `<p class="empty">No claimed transactions yet.</p>`
+          : `<div class="dash-txn-table-wrap">
+              <table class="dash-txn-table">
+                <thead>
+                  <tr>
+                    <th style="width:36px"></th>
+                    <th>Merchant</th>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Transaction ID</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>${txnRows(claimed, false)}</tbody>
+              </table>
+            </div>`}
+      </section>
     </div>`;
 
-  document.getElementById('dashNewClaim').onclick    = () => nav('new-claim');
-  document.getElementById('dashViewBookings').onclick = () => nav('my-claims');
-  document.getElementById('qaBkFlight').onclick      = () => nav('book-flight');
-  document.getElementById('qaBkHotel').onclick       = () => nav('book-hotel');
-  document.getElementById('qaNewClaim').onclick      = () => nav('new-claim');
-  document.getElementById('qaMyClaims').onclick      = () => nav('my-claims');
-  const gncBtn = document.getElementById('dashGoNewClaim');
-  if (gncBtn) gncBtn.onclick = () => nav('new-claim');
+  // ── Checkbox interactions ────────────────────────────────────────────────
+  function updateSelection() {
+    const cbs      = content.querySelectorAll('input.dash-cb');
+    const checked  = content.querySelectorAll('input.dash-cb:checked');
+    const n        = checked.length;
+    const label    = document.getElementById('selectedLabel');
+    const btn      = document.getElementById('claimNowBtn');
+    const selAll   = document.getElementById('selectAllBtn');
+    if (label) label.textContent = `${n} selected`;
+    if (btn)   btn.disabled = n === 0;
+    if (selAll) selAll.textContent = (n === cbs.length && n > 0) ? 'Deselect all' : 'Select all';
+  }
 
-  // Clicking a recent booking opens its detail drawer
-  content.querySelectorAll('[data-booking-id]').forEach(el => {
-    el.onclick = () => {
-      const b = allBookings.find(x => x.bookingId === el.dataset.bookingId);
-      if (b) openBookingDrawer(b);
-    };
+  content.querySelectorAll('input.dash-cb').forEach(cb => {
+    cb.addEventListener('change', updateSelection);
   });
+
+  const selectAllBtn = document.getElementById('selectAllBtn');
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener('click', () => {
+      const cbs = content.querySelectorAll('input.dash-cb');
+      const allChecked = Array.from(cbs).every(cb => cb.checked);
+      cbs.forEach(cb => { cb.checked = !allChecked; });
+      updateSelection();
+    });
+  }
+
+  // ── Claim Now → open React folder with only the selected txn IDs ─────────
+  const claimNowBtn = document.getElementById('claimNowBtn');
+  if (claimNowBtn) {
+    claimNowBtn.addEventListener('click', () => claimSelected());
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// claimSelected()
+// 1. Collects checked txn IDs from the dashboard checklist
+// 2. Navigates to New Claim page, pre-loading those IDs
+// ─────────────────────────────────────────────────────────────────────────────
+function claimSelected() {
+  const checked = Array.from(content.querySelectorAll('input.dash-cb:checked')).map(cb => cb.value);
+  if (!checked.length) return;
+  // Store selected IDs so pageNewClaim() can pick them up
+  window._pendingTxnIds = checked;
+  nav('new-claim');
 }
 
 function recentBookingsHTML(bookings) {
@@ -306,11 +367,27 @@ function pipelineHTML(activeId, doneIds = [], errorId = null) {
 }
 
 function pageNewClaim() {
+  // Pick up the txn IDs selected on the dashboard (if any), then clear
+  const pendingTxnIds = window._pendingTxnIds || null;
+  window._pendingTxnIds = null;
+
+  const txnSummary = pendingTxnIds && pendingTxnIds.length
+    ? `<div class="selected-txns-notice">
+        <strong>${pendingTxnIds.length} transaction${pendingTxnIds.length !== 1 ? 's' : ''} selected</strong>
+        — only these will be available for matching in the claim folder.
+        <span class="selected-txns-ids">${pendingTxnIds.map(id => `<code>${esc(id)}</code>`).join(' ')}</span>
+      </div>`
+    : `<div class="selected-txns-notice selected-txns-notice--warn">
+        No transactions pre-selected — <strong>all</strong> available transactions will be loaded.
+        <button class="btn-link" id="backToSelectBtn">← Go back and select</button>
+      </div>`;
+
   content.innerHTML = `
     <div class="page-pad page-narrow">
       <p class="eyebrow">EXPENSE REPORT</p>
       <h1>Start a new claim</h1>
       <p class="sub">Fill in the details below — the claim folder opens in a new tab where you can upload receipts and submit.</p>
+      ${txnSummary}
 
       <div class="new-claim-layout">
 
@@ -386,12 +463,19 @@ function pageNewClaim() {
     if (h && hint !== undefined) h.innerHTML = hint;
   }
 
+  const backBtn = document.getElementById('backToSelectBtn');
+  if (backBtn) backBtn.onclick = () => nav('dashboard');
+
   document.getElementById('claimForm').onsubmit = async (e) => {
     e.preventDefault();
     const btn = document.getElementById('claimSubmitBtn');
     const err = document.getElementById('claimError');
     const fd  = Object.fromEntries(new FormData(e.currentTarget));
     fd.employeeId = EMPLOYEE_ID;
+    // Pass selected txn IDs to the BFF so only those are shown in the folder
+    if (pendingTxnIds && pendingTxnIds.length) {
+      fd.selectedTxnIds = JSON.stringify(pendingTxnIds);
+    }
     btn.disabled = true;
     btn.textContent = 'Creating…';
     err.classList.add('hidden');
@@ -416,6 +500,10 @@ function pageNewClaim() {
         reportCategory:  fd.reportCategory,
         employeeId:      fd.employeeId,
       });
+      // Pass selectedTxnIds in the URL so the React folder knows which txns to show
+      if (pendingTxnIds && pendingTxnIds.length) {
+        params.set('selectedTxnIds', JSON.stringify(pendingTxnIds));
+      }
 
       // Brief pause so user sees the pipeline update before the tab opens
       await new Promise(r => setTimeout(r, 600));
