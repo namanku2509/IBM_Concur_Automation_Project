@@ -17,7 +17,6 @@ if (!process.env.WXO_ORCHESTRATION_ID) {
 const reportRoutes = require('./routes/report');
 const travelRoutes = require('./routes/travel');
 const chatRoutes   = require('./routes/chat');
-const tokenRoutes  = require('./routes/token');
 const wxoRoutes    = require('./routes/wxo');
 
 const app = express();
@@ -49,8 +48,13 @@ app.use(session({
 app.use('/api/report', reportRoutes);
 app.use('/api/travel', travelRoutes);
 app.use('/api/chat',   chatRoutes);
-app.use('/api/token',  tokenRoutes);
 app.use('/api/wxo',    wxoRoutes);
+
+// Card transactions landing page — served at / (entry point before the dashboard).
+app.use(express.static(path.resolve(__dirname, 'public')));
+app.get('/', (_req, res) => {
+  res.sendFile(path.resolve(__dirname, 'public/card-transactions.html'));
+});
 
 // Standalone travel workspace — served from /travel (same-origin for the BFF).
 app.use('/travel', express.static(path.resolve(__dirname, '../../travel-claim-dashboard')));

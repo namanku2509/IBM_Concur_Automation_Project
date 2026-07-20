@@ -81,3 +81,12 @@ No code changes required.
 | 5 | Frontend: Report Folder Screen | ✅ Done |
 | 6 | Frontend: Chat Interface | ✅ Done |
 | 7 | End-to-End Smoke Test | ✅ Done |
+
+---
+
+## Travel workspace and watsonx Orchestrate
+
+Open `http://localhost:4000/travel/` after starting the Concur stub and BFF.
+The Flight booking screen records each confirmed flight in the Concur corporate-card feed; **Trips** exposes that available transaction and **My claims** shows the submitted expense report created from it.
+
+The report-folder assistant is the watsonx Orchestrate embedded agent. Configure `WXO_*` values and `WXO_PRIVATE_KEY_PATH` in `bff/.env` (see `.env.example`); the server signs short-lived RS256 tokens so no private key or IBM credentials are sent to the browser. This workspace also reads the supplied `Orchestrate` configuration as a development fallback.

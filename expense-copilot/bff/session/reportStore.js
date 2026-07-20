@@ -33,6 +33,9 @@ function create(reportId, fields) {
     processedExpenses: [],
     warnings: [],
     processedHashes: new Set(),   // tracks file hashes already accepted into this report
+    // selectedTxnIds: null = no filter (all transactions eligible for matching)
+    //                 array = user pre-selected these IDs from the landing page
+    selectedTxnIds: fields.selectedTxnIds ?? null,
   };
   return store[reportId];
 }

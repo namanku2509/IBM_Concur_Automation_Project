@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Card Transactions — IBM Expense Copilot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'IBM Plex Sans', -apple-system, sans-serif; background: #f4f6f9; color: #21272a; min-height: 100vh; }
+
+    .topbar { background: #161616; color: #fff; padding: 14px 32px; display: flex; align-items: center; gap: 16px; }
+    .topbar-logo { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; color: #78a9ff; }
+    .topbar-title { font-size: 14px; color: #a8b2bc; }
+
+    .page { max-width: 1100px; margin: 0 auto; padding: 36px 24px 60px; }
+    h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
+    .subtitle { color: #525f70; font-size: 14px; margin-bottom: 28px; }
+
+    .legend { display: flex; gap: 20px; margin-bottom: 18px; font-size: 12px; align-items: center; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+    .dot-unclaimed { background: #da1e28; }
+    .dot-claimed   { background: #24a148; }
+
+    .table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead { background: #f2f4f8; }
+    th { padding: 11px 16px; text-align: left; font-weight: 600; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #525f70; border-bottom: 1px solid #e0e3e8; }
+    td { padding: 11px 16px; border-bottom: 1px solid #f0f2f5; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafbfc; }
+
+    .status-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-unclaimed { background: #fff1f1; color: #da1e28; border: 1px solid #fac5c8; }
+    .badge-claimed   { background: #defbe6; color: #198038; border: 1px solid #a7f0ba; }
+
+    .row-unclaimed td:first-child { border-left: 3px solid #da1e28; }
+    .row-claimed   td:first-child { border-left: 3px solid #24a148; }
+
+    input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: #0f62fe; }
+
+    .action-bar { display: flex; align-items: center; gap: 14px; margin-top: 22px; flex-wrap: wrap; }
+    .selected-count { font-size: 13px; color: #525f70; flex: 1; }
+    .btn-claim { background: #0f62fe; color: #fff; border: none; padding: 11px 28px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .btn-claim:hover { background: #0353e9; }
+    .btn-claim:disabled { background: #a8b2bc; cursor: not-allowed; }
+    .btn-dashboard { background: transparent; color: #0f62fe; border: 1px solid #0f62fe; padding: 10px 22px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .btn-dashboard:hover { background: #edf4ff; }
+
+    .select-all-row { font-size: 12px; color: #0f62fe; cursor: pointer; user-select: none; margin-bottom: 10px; display: inline-block; }
+    .select-all-row:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="topbar-logo">✦ IBM</span>
+  <span class="topbar-title">Expense Copilot — Corporate Card Transactions</span>
+</div>
+
+<div class="page">
+  <h1>Corporate Card Transactions</h1>
+  <p class="subtitle">Select the unclaimed transactions you want to include in a new expense report, then click <strong>Claim Now!</strong></p>
+
+  <div class="legend">
+    <span><span class="legend-dot dot-unclaimed"></span>Unclaimed</span>
+    <span><span class="legend-dot dot-claimed"></span>Already claimed</span>
+  </div>
+
+  <span class="select-all-row" id="selectAllBtn">☐ Select all unclaimed</span>
+
+  <div class="table-wrap">
+    <table id="txnTable">
+      <thead>
+        <tr>
+          <th style="width:40px"></th>
+          <th>Transaction ID</th>
+          <th>Date</th>
+          <th>Merchant</th>
+          <th>Category</th>
+          <th>Amount</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="txnBody">
+        <tr><td colspan="7" style="text-align:center;padding:32px;color:#a8b2bc;">Loading transactions…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="action-bar">
+    <span class="selected-count" id="selectedCount">0 transactions selected</span>
+    <a href="/travel" class="btn-dashboard">Go to Dashboard →</a>
+    <button class="btn-claim" id="claimBtn" disabled>Claim Now!</button>
+  </div>
+</div>
+
+<script>
+  const BFF = 'http://localhost:8001'; // Layer 3 / concur-stub
+  const EMPLOYEE_ID = 'EMP001';
+
+  const tbody       = document.getElementById('txnBody');
+  const claimBtn    = document.getElementById('claimBtn');
+  const countLabel  = document.getElementById('selectedCount');
+  const selectAllBtn= document.getElementById('selectAllBtn');
+
+  let allUnclaimed = [];
+
+  function fmt(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function money(v) {
+    return '₹ ' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function esc(v) {
+    const d = document.createElement('span'); d.textContent = String(v ?? ''); return d.innerHTML;
+  }
+
+  function updateCount() {
+    const checked = tbody.querySelectorAll('input[type=checkbox]:checked').length;
+    countLabel.textContent = checked + ' transaction' + (checked !== 1 ? 's' : '') + ' selected';
+    claimBtn.disabled = checked === 0;
+  }
+
+  async function load() {
+    try {
+      const res  = await fetch(`${BFF}/api/v4/card-transactions?employeeId=${EMPLOYEE_ID}`);
+      const data = await res.json();
+      const txns = data.transactions || data.cardTransactions || data || [];
+
+      allUnclaimed = txns.filter(t => t.status === 'AVAILABLE' || t.status === 'available');
+      const claimed  = txns.filter(t => t.status !== 'AVAILABLE' && t.status !== 'available');
+
+      const rows = [...allUnclaimed.map(t => renderRow(t, false)), ...claimed.map(t => renderRow(t, true))];
+      tbody.innerHTML = rows.join('') || '<tr><td colspan="7" style="text-align:center;padding:32px;color:#a8b2bc;">No transactions found.</td></tr>';
+
+      tbody.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', updateCount));
+      updateCount();
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px;color:#da1e28;">Failed to load transactions: ${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  function renderRow(t, isClaimed) {
+    const rowCls    = isClaimed ? 'row-claimed' : 'row-unclaimed';
+    const badgeCls  = isClaimed ? 'badge-claimed' : 'badge-unclaimed';
+    const badgeTxt  = isClaimed ? 'Claimed' : 'Unclaimed';
+    const checkbox  = isClaimed
+      ? `<input type="checkbox" disabled title="Already claimed" />`
+      : `<input type="checkbox" class="txn-cb" value="${esc(t.transactionId)}" />`;
+    return `
+      <tr class="${rowCls}">
+        <td>${checkbox}</td>
+        <td><code style="font-size:11px">${esc(t.transactionId)}</code></td>
+        <td>${esc(fmt(t.transactionDate))}</td>
+        <td><strong>${esc(t.merchantName || t.vendor || '—')}</strong></td>
+        <td>${esc(t.expenseType || t.category || '—')}</td>
+        <td><strong>${esc(money(t.amount))}</strong></td>
+        <td><span class="status-badge ${badgeCls}">${badgeTxt}</span></td>
+      </tr>`;
+  }
+
+  // Select all unclaimed
+  selectAllBtn.addEventListener('click', () => {
+    const cbs = tbody.querySelectorAll('input.txn-cb');
+    const allChecked = Array.from(cbs).every(cb => cb.checked);
+    cbs.forEach(cb => { cb.checked = !allChecked; });
+    selectAllBtn.textContent = allChecked ? '☐ Select all unclaimed' : '☑ Deselect all';
+    updateCount();
+  });
+
+  // Claim Now! — store selected IDs in sessionStorage and navigate to dashboard
+  claimBtn.addEventListener('click', () => {
+    const selected = Array.from(tbody.querySelectorAll('input.txn-cb:checked')).map(cb => cb.value);
+    if (!selected.length) return;
+    sessionStorage.setItem('selectedTxnIds', JSON.stringify(selected));
+    window.location.href = '/travel';
+  });
+
+  load();
+</script>
+</body>
+</html>

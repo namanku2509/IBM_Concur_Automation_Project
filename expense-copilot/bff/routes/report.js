@@ -6,6 +6,7 @@ const router = express.Router();
 const reportStore = require('../session/reportStore');
 const layer3 = require('../services/layer3Service');
 const layer2 = require('../services/layer2Service');
+const { getVisibleTransactions } = require('../services/reportSelectionService');
 
 // Accept files in memory so we can forward buffers to Layer 2
 const upload = multer({ storage: multer.memoryStorage() });
@@ -149,7 +150,7 @@ function toL3ExpenseInput(exp) {
 // it in Layer 3 so the submit step can find it later.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
-  const { employeeId, reportName, businessPurpose, policy, reportCategory } = req.body;
+  const { employeeId, reportName, businessPurpose, policy, reportCategory, selectedTxnIds } = req.body;
 
   // Validate mandatory fields
   const missing = [];
@@ -181,12 +182,22 @@ router.post('/', async (req, res) => {
     return res.status(502).json({ error: 'Failed to register report in Layer 3', detail });
   }
 
+  let parsedSelectedTxnIds = null;
+  if (selectedTxnIds) {
+    try {
+      parsedSelectedTxnIds = JSON.parse(selectedTxnIds);
+    } catch (_) {
+      parsedSelectedTxnIds = null;
+    }
+  }
+
   const folder = reportStore.create(reportId, {
     employeeId: resolvedEmployeeId,
     reportName,
     businessPurpose,
     policy,
     reportCategory,
+    selectedTxnIds: parsedSelectedTxnIds,
   });
 
   res.status(201).json({
@@ -238,16 +249,26 @@ router.get('/:reportId/transactions', async (req, res) => {
 
   try {
     const data = await layer3.getTransactions(folder.employeeId, { policy: folder.policy });
+    const { transactions: visibleTransactions, selectedTxnIds } = getVisibleTransactions(
+      data.transactions,
+      folder,
+      req.query.txnIds,
+    );
+
+    const shouldPersistSelection = selectedTxnIds !== null && (
+      folder.selectedTxnIds === undefined || folder.selectedTxnIds === null || req.query.txnIds
+    );
 
     reportStore.update(folder.reportId, {
-      availableExpenses: data.transactions,
+      availableExpenses: visibleTransactions,
+      ...(shouldPersistSelection ? { selectedTxnIds } : {}),
       status: 'EXPENSES_LOADED',
     });
 
     res.json({
       reportId:   folder.reportId,
-      totalCount: data.totalCount,
-      transactions: data.transactions,
+      totalCount: visibleTransactions.length,
+      transactions: visibleTransactions,
     });
   } catch (err) {
     const status  = err.response?.status || 502;

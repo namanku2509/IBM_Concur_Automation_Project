@@ -14,14 +14,24 @@ import {
 const HEADERS = [
   { key: 'expenseType',     header: 'Type'      },
   { key: 'vendor',         header: 'Vendor'    },
+  { key: 'viewReceipt',    header: ''          },
   { key: 'amount',         header: 'Amount'    },
   { key: 'transactionDate',header: 'Date'      },
   { key: 'matchStatus',    header: 'Match'     },
   { key: 'ocrStatus',      header: 'OCR'       },
+  { key: 'actions',        header: ''          },
 ];
 
-function ProcessedExpensesTable({ expenses }) {
+function ProcessedExpensesTable({ expenses, onRemove, receiptUrls = {} }) {
   if (!expenses || expenses.length === 0) return null;
+
+  // Build a lookup: row id → preview URL, using the original expense filename
+  const previewUrlById = {};
+  expenses.forEach((e, i) => {
+    const rowId = e.duplicateEntryId || e.expenseId || String(i);
+    const url   = receiptUrls[e.filename];
+    if (url) previewUrlById[rowId] = url;
+  });
 
   const rows = expenses.map((e, i) => {
     const hasAmount = e.amount && Number(e.amount) > 0;
@@ -29,25 +39,30 @@ function ProcessedExpensesTable({ expenses }) {
     const ocrOk     = hasAmount && hasVendor;
 
     // Determine payment label:
+    //   duplicate upload               → DUPLICATE
     //   matched to card txn            → CARD
     //   came from cash drop zone       → CASH
     //   card zone, no match found      → UNMATCHED
-    const matchLabel = e.matchedTxnId
-      ? 'CARD'
-      : e.fromCashZone
-        ? 'CASH'
-        : 'UNMATCHED';
+    const matchLabel = e.status === 'duplicate'
+      ? 'DUPLICATE'
+      : e.matchedTxnId
+        ? 'CARD'
+        : e.fromCashZone
+          ? 'CASH'
+          : 'UNMATCHED';
 
     return {
-      id:              e.expenseId || String(i),
+      id:              e.duplicateEntryId || e.expenseId || String(i),
       expenseType:     e.expenseType   || '—',
       vendor:          hasVendor ? e.vendor : '(not extracted)',
+      viewReceipt:     e.duplicateEntryId || e.expenseId || String(i),
       amount:          hasAmount
         ? `${e.currency || 'INR'} ${Number(e.amount).toLocaleString('en-IN')}`
         : '₹ 0',
       transactionDate: e.transactionDate || '—',
       matchStatus:     matchLabel,
       ocrStatus:       ocrOk ? 'OK' : 'FAILED',
+      actions:         e.id,
     };
   });
 
@@ -70,9 +85,30 @@ function ProcessedExpensesTable({ expenses }) {
                 <TableRow {...getRowProps({ row })} key={row.id}>
                   {row.cells.map(cell => (
                     <TableCell key={cell.id}>
-                      {cell.info.header === 'matchStatus' ? (
+                      {cell.info.header === 'viewReceipt' ? (
+                        previewUrlById[row.id]
+                          ? (
+                            <a
+                              href={previewUrlById[row.id]}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                fontSize: '0.7rem',
+                                padding: '1px 6px',
+                                border: '1px solid #0f62fe',
+                                borderRadius: '3px',
+                                color: '#0f62fe',
+                                textDecoration: 'none',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              View
+                            </a>
+                          )
+                          : null
+                      ) : cell.info.header === 'matchStatus' ? (
                         <Tag
-                          type={cell.value === 'CARD' ? 'green' : cell.value === 'CASH' ? 'teal' : 'red'}
+                          type={cell.value === 'CARD' ? 'green' : cell.value === 'CASH' ? 'teal' : cell.value === 'DUPLICATE' ? 'purple' : 'red'}
                           size="sm"
                         >
                           {cell.value}
@@ -83,6 +119,15 @@ function ProcessedExpensesTable({ expenses }) {
                         </Tag>
                       ) : cell.info.header === 'expenseType' ? (
                         <Tag type="blue" size="sm">{cell.value}</Tag>
+                      ) : cell.info.header === 'actions' ? (
+                        <button
+                          type="button"
+                          className="processed-expenses-remove-button"
+                          onClick={() => onRemove?.(row.id)}
+                          aria-label="Remove uploaded receipt"
+                        >
+                          ×
+                        </button>
                       ) : cell.value}
                     </TableCell>
                   ))}
