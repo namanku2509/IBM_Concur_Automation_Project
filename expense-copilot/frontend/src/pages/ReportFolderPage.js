@@ -94,12 +94,11 @@ function ReportFolderPage() {
   const { reportId } = useParams();
   const location     = useLocation();
   const navigate     = useNavigate();
+  // When opened from the unified dashboard (new tab), location.state is null.
+  // Fall back to URL query params which the dashboard passes via URLSearchParams.
   const metaFromState = location.state || {};
   const metaFromQuery = Object.fromEntries(new URLSearchParams(location.search));
   const meta = Object.keys(metaFromState).length > 0 ? metaFromState : metaFromQuery;
-
-  // ── Receipt preview URLs — keyed by filename, built from File objects at upload time ──
-  const receiptUrlsRef = React.useRef({});
 
   // ── Core state ────────────────────────────────────────────────────────────
   const [folderStatus,       setFolderStatus]       = useState('DRAFT');
@@ -107,12 +106,14 @@ function ReportFolderPage() {
   const [txnLoading,         setTxnLoading]         = useState(true);
   const [txnError,           setTxnError]           = useState(null);
   const [processedExpenses,  setProcessedExpenses]  = useState([]);
+  const [removedExpenseIds,  setRemovedExpenseIds]  = useState([]); // eslint-disable-line no-unused-vars
   const [warnings,           setWarnings]           = useState([]);
   const [processing,         setProcessing]         = useState(false);
   const [processingCash,     setProcessingCash]     = useState(false);
   const [submitting,         setSubmitting]         = useState(false);
   const [submitError,        setSubmitError]        = useState(null);
   const [confirmation,       setConfirmation]       = useState(null);
+  const [chatMessages,       setChatMessages]       = useState([]);
   const [showModal,          setShowModal]          = useState(false);
 
   // ── Pipeline tracker state ─────────────────────────────────────────────────
@@ -131,18 +132,22 @@ function ReportFolderPage() {
   }
 
   // ── Chat helper ───────────────────────────────────────────────────────────
-  // Sends pipeline status updates into the live WXO agent chat via the serial
-  // queue in index.html (window.wxoSendStatus).
   const addAgentMessage = useCallback(message => {
-    const text = typeof message === 'string' ? message : message.text;
-    if (!text) return;
+    const entry = typeof message === 'string'
+      ? { from: 'agent', text: message, ts: new Date().toLocaleTimeString() }
+      : message;
+    setChatMessages(prev => [...prev, entry]);
+  }, []);
 
-    if (typeof window.wxoSendStatus === 'function') {
-      window.wxoSendStatus(text);
-    } else {
-      window._wxoPendingMessages = window._wxoPendingMessages || [];
-      window._wxoPendingMessages.push(text);
-    }
+  // ── BroadcastChannel helper — updates dashboard pipeline panel live ────────
+  const broadcastPipelineStep = useCallback((step, done, hint) => {
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('roam-expense');
+        bc.postMessage({ type: 'pipeline-step', step, done, hint });
+        bc.close();
+      }
+    } catch (_) {}
   }, []);
 
   // ── Step 2: Load transactions on mount ───────────────────────────────────
@@ -155,11 +160,14 @@ function ReportFolderPage() {
 
     async function load() {
       setStep('TXN_FETCH', 'active');
+      broadcastPipelineStep('txn', ['create'], 'Fetching corporate card transactions…');
       try {
         const data = await getTransactions(reportId);
         setTransactions(data.transactions || []);
         setFolderStatus('EXPENSES_LOADED');
         setStep('TXN_FETCH', 'done');
+        broadcastPipelineStep('ocr', ['create', 'txn'],
+          `✓ ${data.totalCount} card transaction${data.totalCount !== 1 ? 's' : ''} loaded. Upload receipts to continue.`);
         addAgentMessage(
           `Found ${data.totalCount} transaction${data.totalCount !== 1 ? 's' : ''} on your corporate card.\nUpload your PDF receipts to begin AI processing.`
         );
@@ -180,11 +188,6 @@ function ReportFolderPage() {
 
   // ── Step 3-5: Receipt upload → OCR → AI → Match ──────────────────────────
   async function handleUpload(files) {
-    Array.from(files).forEach(file => {
-      if (!receiptUrlsRef.current[file.name]) {
-        receiptUrlsRef.current[file.name] = URL.createObjectURL(file);
-      }
-    });
     setProcessing(true);
     setFolderStatus('PROCESSING');
     setSubmitError(null);
@@ -193,6 +196,8 @@ function ReportFolderPage() {
     setStep('OCR', 'active');
     const estSecs = files.length * 45;
     const estMins = Math.ceil(estSecs / 60);
+    broadcastPipelineStep('ocr', ['create', 'txn'],
+      `⟳ OCR processing ${files.length} receipt${files.length !== 1 ? 's' : ''}… (~${estMins} min)`);
     addAgentMessage(
       `Sending ${files.length} receipt${files.length !== 1 ? 's' : ''} for OCR processing via Docling…\n` +
       `⏱ Estimated time: ~${estMins} min${estMins !== 1 ? 's' : ''} (${files.length} × ~45s per receipt on this VM)`
@@ -200,17 +205,18 @@ function ReportFolderPage() {
 
     try {
       // Simulate stage transitions during the API call
-      // (The actual stages happen inside Layer 2 — we show approximate progress)
       const perReceiptMs = 45000;
       const ocrTimer = setTimeout(() => {
         setStep('OCR', 'done');
         setStep('AI_EXTRACT', 'active');
+        broadcastPipelineStep('ai', ['create', 'txn', 'ocr'], '⟳ AI extracting vendor, amount, date…');
         addAgentMessage('OCR complete ✅ — Ollama LLM now extracting fields (vendor, amount, date, city)…');
       }, Math.max(files.length * perReceiptMs * 0.6, 5000));
 
       const aiTimer = setTimeout(() => {
         setStep('AI_EXTRACT', 'done');
         setStep('MATCHING', 'active');
+        broadcastPipelineStep('match', ['create', 'txn', 'ocr', 'ai'], '⟳ Matching receipts to card transactions…');
         addAgentMessage('AI extraction complete ✅ — Matching receipts to corporate card transactions…');
       }, Math.max(files.length * perReceiptMs * 0.85, 10000));
 
@@ -231,15 +237,26 @@ function ReportFolderPage() {
         e.errorMessage?.includes('Cash payment') || e.errorMessage?.includes('Out-of-Pocket')
       ));
       const ocrFailures     = expenses.filter(e => e.status === 'error' && !wrongBoxErrors.includes(e));
-      // Merge card results with existing cash expenses — never wipe fromCashZone entries
+      // Append new card results after existing expenses, avoiding duplicate file hashes.
       setProcessedExpenses(prev => {
-        const cashExpenses = prev.filter(e => e.fromCashZone);
-        return [...cashExpenses, ...successExpenses];
+        const existingHashes = new Set(prev.map(e => e.fileHash).filter(Boolean));
+        const duplicateExpenses = expenses
+          .filter(e => e.status === 'duplicate')
+          .map((e, index) => ({
+            ...e,
+            fromCashZone: false,
+            duplicateEntryId: `${e.fileHash || e.filename || 'duplicate'}-${index}-${Date.now()}`,
+          }));
+        const uniqueSuccessExpenses = successExpenses.filter(e => !e.fileHash || !existingHashes.has(e.fileHash));
+        return [...prev, ...uniqueSuccessExpenses, ...duplicateExpenses];
       });
-      setWarnings(allWarns);
+      setWarnings(prev => [...prev, ...allWarns]);
       // Only update match stats when there are actual card-zone successes to show
       if (successExpenses.length > 0) {
-        setMatchStats({ matched, total: successExpenses.length });
+        setMatchStats(prev => ({
+          matched: (prev?.matched || 0) + matched,
+          total: (prev?.total || 0) + successExpenses.length,
+        }));
         setFolderStatus('REVIEW');
       } else {
         setFolderStatus(prev => (prev === 'REVIEW' ? 'REVIEW' : 'EXPENSES_LOADED'));
@@ -249,6 +266,10 @@ function ReportFolderPage() {
       setStep('OCR',        allFailed ? 'error' : 'done');
       setStep('AI_EXTRACT', allFailed ? 'idle'  : 'done');
       setStep('MATCHING',   allFailed ? 'idle'  : 'done');
+      if (!allFailed) {
+        broadcastPipelineStep('submit', ['create','txn','ocr','ai','match'],
+          `✓ ${successExpenses.length} expense${successExpenses.length !== 1 ? 's' : ''} processed — ${matched} card matched. Ready to submit.`);
+      }
 
       const policyWarnCount = allWarns.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length;
       const lines = [
@@ -288,11 +309,6 @@ function ReportFolderPage() {
 
   // ── Cash receipts: same pipeline, results appended, no card match expected ──
   async function handleCashUpload(files) {
-    Array.from(files).forEach(file => {
-      if (!receiptUrlsRef.current[file.name]) {
-        receiptUrlsRef.current[file.name] = URL.createObjectURL(file);
-      }
-    });
     setProcessingCash(true);
     setSubmitError(null);
 
@@ -379,6 +395,15 @@ function ReportFolderPage() {
         `Status: ${data.status}\n` +
         `${data.message || ''}`
       );
+      // Notify the travel dashboard (same browser, any tab) so it refreshes
+      // My Claims and the dashboard stats without a manual reload.
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('roam-expense');
+          bc.postMessage({ type: 'report-submitted', reportId });
+          bc.close();
+        }
+      } catch (_) { /* BroadcastChannel not supported — silently ignore */ }
     } catch (err) {
       setStep('SUBMIT', 'error');
       const msg = err.response?.data?.error
@@ -392,12 +417,29 @@ function ReportFolderPage() {
   }
 
   // Only policy-level errors (not OCR failures) block submission.
-  // OCR failures are surfaced as informational warnings; the successfully
-  // extracted expenses can still be submitted.
   const hasPolicyErrors = warnings.some(
-    w => w.severity === 'ERROR' && w.code !== 'RECEIPT_PROCESSING_FAILED'
+    w => w.severity === 'ERROR'
+      && w.code !== 'RECEIPT_PROCESSING_FAILED'
+      && w.code !== 'DUPLICATE_RECEIPT'
   );
-  const canSubmit = folderStatus === 'REVIEW' && !hasPolicyErrors && !submitting;
+
+  // All AVAILABLE card transactions must be matched to a receipt before submit.
+  // Cash/out-of-pocket expenses (no matchedTxnId) are fine — they don't consume a card txn.
+  const matchedTxnIds = new Set(
+    processedExpenses.map(e => e.matchedTxnId).filter(Boolean)
+  );
+  const unmatchedTxns = transactions.filter(
+    t => t.status === 'AVAILABLE' && !matchedTxnIds.has(t.transactionId)
+  );
+  const allTxnsMatched = unmatchedTxns.length === 0;
+
+  const canSubmit = folderStatus === 'REVIEW' && !hasPolicyErrors && !submitting && allTxnsMatched;
+
+  function handleRemoveExpense(expenseId) {
+    setProcessedExpenses(prev => prev.filter(expense => (expense.duplicateEntryId || expense.expenseId) !== expenseId));
+    setWarnings(prev => prev.filter(w => w.code !== 'DUPLICATE_RECEIPT'));
+    setRemovedExpenseIds(prev => [...prev, expenseId]);
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -436,9 +478,6 @@ function ReportFolderPage() {
             Report ID: <strong>{reportId}</strong>
           </p>
         </Tile>
-
-        {/* Pipeline tracker */}
-        <PipelineTracker stepStatuses={stepStatuses} matchStats={matchStats} />
 
         {/* Submission confirmation */}
         {confirmation && (
@@ -520,7 +559,7 @@ function ReportFolderPage() {
                 {processedExpenses.length} total)
               </span>
             </p>
-            <ProcessedExpensesTable expenses={processedExpenses} onRemove={handleRemoveExpense} receiptUrls={receiptUrlsRef.current} />
+            <ProcessedExpensesTable expenses={processedExpenses} onRemove={handleRemoveExpense} />
           </div>
         )}
 
@@ -542,9 +581,11 @@ function ReportFolderPage() {
             <p className="submit-bar-info">
               {hasPolicyErrors
                 ? '⛔ Fix the policy errors above before submitting.'
+                : !allTxnsMatched
+                ? `⛔ ${unmatchedTxns.length} card transaction${unmatchedTxns.length !== 1 ? 's' : ''} still need${unmatchedTxns.length === 1 ? 's' : ''} a receipt — upload receipts for all card transactions before submitting.`
                 : warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length > 0
                 ? `⚠️ ${warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length} policy warning${warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length !== 1 ? 's' : ''} — you can still submit.`
-                : '✅ All checks passed. Ready to submit.'}
+                : '✅ All card transactions matched. Ready to submit.'}
             </p>
             <Button kind="secondary" onClick={() => navigate('/')} disabled={submitting}>
               Cancel
@@ -557,8 +598,65 @@ function ReportFolderPage() {
 
       </div>
 
-      {/* ── Chat panel ── */}
-      <ChatPanel />
+      {/* ── Right sidebar: pipeline status + WXO ── */}
+      <aside className="status-sidebar">
+
+        {/* Pipeline tracker */}
+        <div className="ss-pipeline">
+          <p className="ss-section-title">Processing Pipeline</p>
+          <div className="ss-steps">
+            {PIPELINE_STEPS.map((step, i) => {
+              const status = stepStatuses[step.id] || 'idle';
+              return (
+                <div key={step.id} className={`ss-step ss-step--${status}`}>
+                  <div className="ss-dot-col">
+                    <div className="ss-dot">
+                      {status === 'done'   && '✓'}
+                      {status === 'active' && <span className="pipeline-spinner">⟳</span>}
+                      {status === 'error'  && '✕'}
+                      {status === 'idle'   && (i + 1)}
+                    </div>
+                    {i < PIPELINE_STEPS.length - 1 && (
+                      <div className={`ss-connector ${status === 'done' ? 'ss-connector--done' : ''}`} />
+                    )}
+                  </div>
+                  <div className="ss-step-body">
+                    <span className="ss-step-label">{step.label}</span>
+                    <span className="ss-step-desc">{step.desc}</span>
+                    {step.id === 'MATCHING' && status === 'done' && matchStats && (
+                      <span className="ss-step-stat">
+                        {matchStats.matched}/{matchStats.total} matched
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Activity log */}
+        <div className="ss-log">
+          <p className="ss-section-title">Activity log</p>
+          <div className="ss-log-entries">
+            {chatMessages.length === 0 && (
+              <p className="ss-log-empty">Steps will appear here as the pipeline runs.</p>
+            )}
+            {[...chatMessages].reverse().map((m, i) => (
+              <div key={i} className="ss-log-entry">
+                <span className="ss-log-ts">{m.ts}</span>
+                <span className="ss-log-text">{m.text || m.message || String(m)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* WXO widget — only renders when configured */}
+        <div className="ss-wxo">
+          <ChatPanel />
+        </div>
+
+      </aside>
 
       {/* ── Submit confirmation modal ── */}
       {showModal && (
