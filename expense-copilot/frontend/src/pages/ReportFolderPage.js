@@ -436,19 +436,14 @@ function ReportFolderPage() {
       && w.code !== 'DUPLICATE_RECEIPT'
   );
 
-  // All AVAILABLE card transactions must be matched to a receipt before submit.
-  // Cash/out-of-pocket expenses (no matchedTxnId) are fine — they don't consume a card txn.
-  // Duplicate-status rows are excluded: they are rejected entries, not valid matches.
-  const matchedTxnIds = new Set(
-    processedExpenses
-      .filter(e => e.status !== 'duplicate' && !e.duplicateEntryId)
-      .map(e => e.matchedTxnId)
-      .filter(Boolean)
+  // Submit is allowed when every card-zone, non-duplicate expense has a matched txn.
+  // Cash expenses (fromCashZone) and duplicate rows are excluded from this requirement.
+  // Duplicate-status rows are rejected entries — removing them must not block submission.
+  const validCardExpenses = processedExpenses.filter(
+    e => !e.fromCashZone && e.status !== 'duplicate' && !e.duplicateEntryId
   );
-  const unmatchedTxns = transactions.filter(
-    t => t.status === 'AVAILABLE' && !matchedTxnIds.has(t.transactionId)
-  );
-  const allTxnsMatched = unmatchedTxns.length === 0;
+  const unmatchedTxns = validCardExpenses.filter(e => !e.matchedTxnId);
+  const allTxnsMatched = validCardExpenses.length > 0 && unmatchedTxns.length === 0;
 
   const canSubmit = folderStatus === 'REVIEW' && !hasPolicyErrors && !submitting && allTxnsMatched;
 
@@ -599,7 +594,7 @@ function ReportFolderPage() {
               {hasPolicyErrors
                 ? '⛔ Fix the policy errors above before submitting.'
                 : !allTxnsMatched
-                ? `⛔ ${unmatchedTxns.length} card transaction${unmatchedTxns.length !== 1 ? 's' : ''} still need${unmatchedTxns.length === 1 ? 's' : ''} a receipt — upload receipts for all card transactions before submitting.`
+                ? `⛔ ${unmatchedTxns.length} uploaded receipt${unmatchedTxns.length !== 1 ? 's' : ''} still need${unmatchedTxns.length === 1 ? 's' : ''} a card match — review before submitting.`
                 : warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length > 0
                 ? `⚠️ ${warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length} policy warning${warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length !== 1 ? 's' : ''} — you can still submit.`
                 : '✅ All card transactions matched. Ready to submit.'}
