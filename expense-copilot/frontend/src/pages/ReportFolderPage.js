@@ -438,8 +438,12 @@ function ReportFolderPage() {
 
   // All AVAILABLE card transactions must be matched to a receipt before submit.
   // Cash/out-of-pocket expenses (no matchedTxnId) are fine — they don't consume a card txn.
+  // Duplicate-status rows are excluded: they are rejected entries, not valid matches.
   const matchedTxnIds = new Set(
-    processedExpenses.map(e => e.matchedTxnId).filter(Boolean)
+    processedExpenses
+      .filter(e => e.status !== 'duplicate' && !e.duplicateEntryId)
+      .map(e => e.matchedTxnId)
+      .filter(Boolean)
   );
   const unmatchedTxns = transactions.filter(
     t => t.status === 'AVAILABLE' && !matchedTxnIds.has(t.transactionId)
