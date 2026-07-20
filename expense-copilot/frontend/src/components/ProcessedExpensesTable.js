@@ -14,6 +14,7 @@ import {
 const HEADERS = [
   { key: 'expenseType',     header: 'Type'      },
   { key: 'vendor',         header: 'Vendor'    },
+  { key: 'viewReceipt',    header: ''          },
   { key: 'amount',         header: 'Amount'    },
   { key: 'transactionDate',header: 'Date'      },
   { key: 'matchStatus',    header: 'Match'     },
@@ -54,6 +55,7 @@ function ProcessedExpensesTable({ expenses, onRemove, receiptUrls = {} }) {
       id:              e.duplicateEntryId || e.expenseId || String(i),
       expenseType:     e.expenseType   || '—',
       vendor:          hasVendor ? e.vendor : '(not extracted)',
+      viewReceipt:     e.duplicateEntryId || e.expenseId || String(i),
       amount:          hasAmount
         ? `${e.currency || 'INR'} ${Number(e.amount).toLocaleString('en-IN')}`
         : '₹ 0',
@@ -83,10 +85,9 @@ function ProcessedExpensesTable({ expenses, onRemove, receiptUrls = {} }) {
                 <TableRow {...getRowProps({ row })} key={row.id}>
                   {row.cells.map(cell => (
                     <TableCell key={cell.id}>
-                      {cell.info.header === 'vendor' ? (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          {cell.value}
-                          {previewUrlById[row.id] && (
+                      {cell.info.header === 'viewReceipt' ? (
+                        previewUrlById[row.id]
+                          ? (
                             <a
                               href={previewUrlById[row.id]}
                               target="_blank"
@@ -103,8 +104,8 @@ function ProcessedExpensesTable({ expenses, onRemove, receiptUrls = {} }) {
                             >
                               View
                             </a>
-                          )}
-                        </span>
+                          )
+                          : null
                       ) : cell.info.header === 'matchStatus' ? (
                         <Tag
                           type={cell.value === 'CARD' ? 'green' : cell.value === 'CASH' ? 'teal' : cell.value === 'DUPLICATE' ? 'purple' : 'red'}
