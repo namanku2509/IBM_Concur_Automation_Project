@@ -21,8 +21,16 @@ const HEADERS = [
   { key: 'actions',        header: ''          },
 ];
 
-function ProcessedExpensesTable({ expenses, onRemove }) {
+function ProcessedExpensesTable({ expenses, onRemove, receiptUrls = {} }) {
   if (!expenses || expenses.length === 0) return null;
+
+  // Build a lookup: row id → object URL, keyed by the original filename
+  const previewUrlById = {};
+  expenses.forEach((e, i) => {
+    const rowId = e.duplicateEntryId || e.expenseId || String(i);
+    const url   = receiptUrls[e.filename];
+    if (url) previewUrlById[rowId] = url;
+  });
 
   const rows = expenses.map((e, i) => {
     const hasAmount = e.amount && Number(e.amount) > 0;
@@ -75,7 +83,29 @@ function ProcessedExpensesTable({ expenses, onRemove }) {
                 <TableRow {...getRowProps({ row })} key={row.id}>
                   {row.cells.map(cell => (
                     <TableCell key={cell.id}>
-                      {cell.info.header === 'matchStatus' ? (
+                      {cell.info.header === 'vendor' ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {cell.value}
+                          {previewUrlById[row.id] && (
+                            <a
+                              href={previewUrlById[row.id]}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                fontSize: '0.7rem',
+                                padding: '1px 6px',
+                                border: '1px solid #0f62fe',
+                                borderRadius: '3px',
+                                color: '#0f62fe',
+                                textDecoration: 'none',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              View
+                            </a>
+                          )}
+                        </span>
+                      ) : cell.info.header === 'matchStatus' ? (
                         <Tag
                           type={cell.value === 'CARD' ? 'green' : cell.value === 'CASH' ? 'teal' : cell.value === 'DUPLICATE' ? 'purple' : 'red'}
                           size="sm"

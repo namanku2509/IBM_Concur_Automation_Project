@@ -100,6 +100,9 @@ function ReportFolderPage() {
   const metaFromQuery = Object.fromEntries(new URLSearchParams(location.search));
   const meta = Object.keys(metaFromState).length > 0 ? metaFromState : metaFromQuery;
 
+  // ── Receipt preview URLs — keyed by filename, built from File objects at upload time ──
+  const receiptUrlsRef = React.useRef({});
+
   // ── Core state ────────────────────────────────────────────────────────────
   const [folderStatus,       setFolderStatus]       = useState('DRAFT');
   const [transactions,       setTransactions]       = useState([]);
@@ -188,6 +191,11 @@ function ReportFolderPage() {
 
   // ── Step 3-5: Receipt upload → OCR → AI → Match ──────────────────────────
   async function handleUpload(files) {
+    Array.from(files).forEach(file => {
+      if (!receiptUrlsRef.current[file.name]) {
+        receiptUrlsRef.current[file.name] = URL.createObjectURL(file);
+      }
+    });
     setProcessing(true);
     setFolderStatus('PROCESSING');
     setSubmitError(null);
@@ -309,6 +317,11 @@ function ReportFolderPage() {
 
   // ── Cash receipts: same pipeline, results appended, no card match expected ──
   async function handleCashUpload(files) {
+    Array.from(files).forEach(file => {
+      if (!receiptUrlsRef.current[file.name]) {
+        receiptUrlsRef.current[file.name] = URL.createObjectURL(file);
+      }
+    });
     setProcessingCash(true);
     setSubmitError(null);
 
@@ -559,7 +572,7 @@ function ReportFolderPage() {
                 {processedExpenses.length} total)
               </span>
             </p>
-            <ProcessedExpensesTable expenses={processedExpenses} onRemove={handleRemoveExpense} />
+            <ProcessedExpensesTable expenses={processedExpenses} onRemove={handleRemoveExpense} receiptUrls={receiptUrlsRef.current} />
           </div>
         )}
 
