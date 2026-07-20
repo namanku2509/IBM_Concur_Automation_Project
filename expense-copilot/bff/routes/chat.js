@@ -23,16 +23,18 @@ router.get('/config', (req, res) => {
     return res.json({ configured: false });
   }
 
+  // Only include agentEnvironmentId when it is actually set — sending an empty
+  // string causes the WXO SDK to throw a validation error.
+  const chatOptions = { agentId };
+  if (agentEnvironmentId) chatOptions.agentEnvironmentId = agentEnvironmentId;
+
   res.json({
     configured: true,
     orchestrationID,
     hostURL,
     crn,
     deploymentPlatform: 'ibmcloud',
-    chatOptions: {
-      agentId,
-      agentEnvironmentId,
-    },
+    chatOptions,
   });
 });
 

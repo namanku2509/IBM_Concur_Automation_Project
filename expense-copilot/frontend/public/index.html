@@ -104,7 +104,14 @@
       async function onWxoLoad(instance) {
         instance.on('authTokenNeeded', async function (event) {
           try {
-            event.authToken = await getWxoToken();
+            var freshToken = await getWxoToken();
+            // resolveToken() is the SDK v2+ API.
+            // Fall back to event.authToken for older SDK builds.
+            if (typeof event.resolveToken === 'function') {
+              event.resolveToken(freshToken);
+            } else {
+              event.authToken = freshToken;
+            }
           } catch (error) {
             console.error('Unable to refresh watsonx Orchestrate token:', error);
           }
