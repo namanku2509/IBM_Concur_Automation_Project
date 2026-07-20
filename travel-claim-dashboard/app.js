@@ -130,9 +130,7 @@ if (typeof BroadcastChannel !== 'undefined') {
   };
 }
 
-document.getElementById('aiBtn').onclick = () => {
-  window.open('http://localhost:3000', '_blank');
-};
+document.getElementById('aiBtn').onclick = () => {};
 
 // ── Search (filters visible claim/booking rows) ────────────────────────────
 document.getElementById('searchInput').oninput = function () {

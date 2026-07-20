@@ -479,9 +479,6 @@ function ReportFolderPage() {
           </p>
         </Tile>
 
-        {/* Pipeline tracker */}
-        <PipelineTracker stepStatuses={stepStatuses} matchStats={matchStats} />
-
         {/* Submission confirmation */}
         {confirmation && (
           <Tile className="confirmation-tile">
