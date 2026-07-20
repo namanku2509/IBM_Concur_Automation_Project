@@ -341,7 +341,10 @@ router.post('/:reportId/receipts', upload.array('files'), async (req, res) => {
   try {
     // paymentHint comes from the frontend form field — 'card' or 'cash'
     const paymentHint = req.body?.paymentHint || 'card';
-    const data = await layer2.processReceipts(folder.reportId, folder.employeeId, uniqueFiles, paymentHint);
+    // Pass the pre-selected txn IDs so Layer 2 only matches against those.
+    // null means no restriction (all available txns are candidates).
+    const allowedTxnIds = folder.selectedTxnIds || null;
+    const data = await layer2.processReceipts(folder.reportId, folder.employeeId, uniqueFiles, paymentHint, allowedTxnIds);
 
     // Layer 2 returns results[] not expenses[]
     const rawResults = data.results || data.expenses || [];

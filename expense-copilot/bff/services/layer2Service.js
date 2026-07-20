@@ -7,11 +7,18 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { LAYER2_BASE_URL } = require('../config');
 
-async function processReceipts(reportId, employeeId, files, paymentHint = 'card') {
+async function processReceipts(reportId, employeeId, files, paymentHint = 'card', allowedTxnIds = null) {
   const form = new FormData();
   form.append('report_id', reportId);
   form.append('employee_id', employeeId);
   form.append('payment_hint', paymentHint);
+
+  // When the user pre-selected specific transactions, tell Layer 2 to match
+  // ONLY against those IDs. Any receipt that would match a txn outside this
+  // set must be returned as unmatched.
+  if (allowedTxnIds && Array.isArray(allowedTxnIds) && allowedTxnIds.length > 0) {
+    form.append('allowed_txn_ids', JSON.stringify(allowedTxnIds));
+  }
 
   files.forEach(file => {
     form.append('files', file.buffer, {

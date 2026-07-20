@@ -439,14 +439,21 @@ function ReportFolderPage() {
       && w.code !== 'DUPLICATE_RECEIPT'
   );
 
-  // Submit is allowed when every card-zone, non-duplicate expense has a matched txn.
-  // Cash expenses (fromCashZone) and duplicate rows are excluded from this requirement.
-  // Duplicate-status rows are rejected entries — removing them must not block submission.
-  const validCardExpenses = processedExpenses.filter(
-    e => !e.fromCashZone && e.status !== 'duplicate' && !e.duplicateEntryId
+  // Submit guard: every selected card transaction must have a receipt matched to it.
+  // We check from the transactions side (not the expenses side) so:
+  //   - Extra receipts that didn't match any selected txn don't enable submit
+  //   - The count is based on what the user was required to upload, not what they did
+  const matchedTxnIds = new Set(
+    processedExpenses
+      .filter(e => !e.fromCashZone && e.status !== 'duplicate' && !e.duplicateEntryId)
+      .map(e => e.matchedTxnId)
+      .filter(Boolean)
   );
-  const unmatchedTxns = validCardExpenses.filter(e => !e.matchedTxnId);
-  const allTxnsMatched = validCardExpenses.length > 0 && unmatchedTxns.length === 0;
+  // transactions[] contains exactly the selected txns (filtered by BFF selectedTxnIds)
+  const unmatchedTxns = transactions.filter(
+    t => t.status === 'AVAILABLE' && !matchedTxnIds.has(t.transactionId)
+  );
+  const allTxnsMatched = transactions.length > 0 && unmatchedTxns.length === 0;
 
   const canSubmit = folderStatus === 'REVIEW' && !hasPolicyErrors && !submitting && allTxnsMatched;
 
@@ -597,7 +604,7 @@ function ReportFolderPage() {
               {hasPolicyErrors
                 ? '⛔ Fix the policy errors above before submitting.'
                 : !allTxnsMatched
-                ? `⛔ ${unmatchedTxns.length} uploaded receipt${unmatchedTxns.length !== 1 ? 's' : ''} still need${unmatchedTxns.length === 1 ? 's' : ''} a card match — review before submitting.`
+                ? `⛔ ${unmatchedTxns.length} selected transaction${unmatchedTxns.length !== 1 ? 's' : ''} still need${unmatchedTxns.length === 1 ? 's' : ''} a matched receipt — upload receipts for them before submitting.`
                 : warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length > 0
                 ? `⚠️ ${warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length} policy warning${warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length !== 1 ? 's' : ''} — you can still submit.`
                 : '✅ All card transactions matched. Ready to submit.'}

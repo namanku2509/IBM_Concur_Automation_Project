@@ -84,6 +84,10 @@ async def run_pipeline(
         str,
         Form(description="'card' (default) or 'cash'. Cash receipts skip card matching and are recorded as PERSONAL_CASH."),
     ] = "card",
+    allowed_txn_ids: Annotated[
+        str,
+        Form(description="JSON array of transaction IDs the user selected. When present, matching is restricted STRICTLY to these IDs only."),
+    ] = "",
 ) -> PipelineResult:
     if not files:
         raise HTTPException(status_code=422, detail="At least one PDF file is required.")
@@ -102,6 +106,20 @@ async def run_pipeline(
         filename = upload.filename or "unknown.pdf"
         file_bytes = await upload.read()
         file_payloads.append((filename, file_bytes))
+
+    # ── Parse allowed_txn_ids ─────────────────────────────────────────────────
+    # When set, the matching pool is restricted STRICTLY to these txn IDs.
+    # Receipts that OCR-match a txn outside this set are returned as unmatched.
+    import json as _json
+    _allowed_set: set[str] | None = None
+    if allowed_txn_ids and allowed_txn_ids.strip():
+        try:
+            parsed = _json.loads(allowed_txn_ids)
+            if isinstance(parsed, list) and parsed:
+                _allowed_set = set(str(t) for t in parsed)
+                logger.info("Pipeline: strict txn filter active — %d allowed IDs", len(_allowed_set))
+        except Exception:
+            logger.warning("Pipeline: could not parse allowed_txn_ids '%s' — no filter applied", allowed_txn_ids)
 
     logger.info(
         "Pipeline started | report=%s employee=%s files=%d (parallel, max %d)",
@@ -156,12 +174,24 @@ async def run_pipeline(
             )
             available_transactions = []
 
+        # STRICT FILTER — keep only the user-selected txn IDs in the pool.
+        # This is the enforcement point: even if Layer 3 returns all txns,
+        # the matcher only sees the ones the user explicitly chose.
+        if _allowed_set and available_transactions:
+            before = len(available_transactions)
+            available_transactions = [t for t in available_transactions if t.txn_id in _allowed_set]
+            logger.info(
+                "Pipeline: txn pool filtered %d → %d (strict allowed_txn_ids)",
+                before, len(available_transactions),
+            )
+
     async def process_one(filename: str, file_bytes: bytes) -> ReceiptResult:
         async with semaphore:
             return await _process_single_receipt(
                 filename, file_bytes, report_id, employee_id, claim_ledger,
                 payment_hint=payment_hint,
                 available_transactions=available_transactions,
+                allowed_set=_allowed_set,
             )
 
     # Run all unique receipts in parallel
@@ -215,6 +245,7 @@ async def _process_single_receipt(
     claim_ledger=None,
     payment_hint: str = "card",
     available_transactions=None,
+    allowed_set: set | None = None,
 ) -> ReceiptResult:
     """Process one receipt through all 5 pipeline stages. Never raises — errors are captured."""
 
@@ -302,7 +333,17 @@ async def _process_single_receipt(
                 available_transactions=available_transactions,
             )
             if match_result.txn_id:
-                extracted.payment_type = "CORPORATE_CARD"
+                # STRICT ENFORCEMENT: if a filter was active and the matched txn
+                # is not in the allowed set (safety net — should already be filtered
+                # in available_transactions, but double-check here), reject the match.
+                if allowed_set and match_result.txn_id not in allowed_set:
+                    logger.warning(
+                        "Strict filter: match txn_id=%s is outside allowed_set — clearing match for %s",
+                        match_result.txn_id, filename,
+                    )
+                    match_result = MatchResult(txn_id=None, confidence=0.0, score_vendor=0.0, score_amount=0.0, score_date=0.0)
+                else:
+                    extracted.payment_type = "CORPORATE_CARD"
 
         # Stage 5 — Register receipt (cross-batch duplicate check via Layer 3 409)
         receipt_id = None
