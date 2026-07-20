@@ -45,9 +45,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Pipeline"])
 
-# Max receipts to process concurrently — prevents OOM on 4GB RAM VMs
-# Docling loads a ~500MB model per worker; 3 concurrent = ~1.5GB
-MAX_CONCURRENT_RECEIPTS = 3
+# Max receipts to process concurrently.
+# Set to 1 to avoid a tqdm._lock AttributeError that surfaces on macOS when
+# Docling's internal mpire workers start inside concurrent asyncio thread
+# executors. Sequential processing is safe — each receipt still runs fully
+# through OCR → LLM → match, just one at a time.
+MAX_CONCURRENT_RECEIPTS = 1
 
 
 @router.post(

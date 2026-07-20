@@ -36,26 +36,9 @@ def _get_converter():
     global _converter
     if _converter is None:
         from docling.document_converter import DocumentConverter
-        from docling.datamodel.pipeline_options import PdfPipelineOptions
-
         logger.info("Initialising Docling DocumentConverter (one-time startup cost)")
-
-        # Force single-threaded page processing.
-        # Docling's default uses mpire multiprocessing workers which triggers a
-        # tqdm._lock AttributeError on macOS when multiple receipts are processed
-        # concurrently via asyncio.  num_threads=1 disables that internal pool
-        # entirely without affecting OCR quality.
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = False          # text-layer PDFs — no image OCR needed
-        pipeline_options.do_table_structure = False  # receipts have no complex tables
-
-        from docling.document_converter import PdfFormatOption
-        _converter = DocumentConverter(
-            format_options={
-                "pdf": PdfFormatOption(pipeline_options=pipeline_options),
-            }
-        )
-        logger.info("Docling DocumentConverter ready (single-threaded mode)")
+        _converter = DocumentConverter()
+        logger.info("Docling DocumentConverter ready")
     return _converter
 
 
