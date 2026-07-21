@@ -268,7 +268,16 @@ function ReportFolderPage() {
         }));
         setFolderStatus('REVIEW');
       } else {
-        setFolderStatus(prev => (prev === 'REVIEW' ? 'REVIEW' : 'EXPENSES_LOADED'));
+        // Duplicate-only upload: we set folderStatus to 'PROCESSING' at the start
+        // of handleUpload, so prev is 'PROCESSING' here — not 'REVIEW'.
+        // Restore to 'REVIEW' if there are already successfully matched expenses,
+        // otherwise fall back to 'EXPENSES_LOADED'.
+        setFolderStatus(() => {
+          const hasExisting = processedExpenses.some(
+            e => e.status !== 'duplicate' && !e.duplicateEntryId && e.status !== 'error'
+          );
+          return hasExisting ? 'REVIEW' : 'EXPENSES_LOADED';
+        });
       }
 
       const allFailed = expenses.length > 0 && successExpenses.length === 0;
