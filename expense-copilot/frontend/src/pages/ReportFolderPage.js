@@ -465,7 +465,9 @@ function ReportFolderPage() {
   );
   const allTxnsMatched = transactions.length > 0 && unmatchedTxns.length === 0;
 
-  const canSubmit = folderStatus === 'REVIEW' && !hasPolicyErrors && !submitting && allTxnsMatched;
+  const hasDuplicates = processedExpenses.some(e => e.status === 'duplicate' || e.duplicateEntryId);
+
+  const canSubmit = folderStatus === 'REVIEW' && !hasPolicyErrors && !submitting && allTxnsMatched && !hasDuplicates;
 
   function handleRemoveExpense(expenseId) {
     // Remove from local UI state immediately (optimistic)
@@ -618,6 +620,8 @@ function ReportFolderPage() {
             <p className="submit-bar-info">
               {hasPolicyErrors
                 ? '⛔ Fix the policy errors above before submitting.'
+                : hasDuplicates
+                ? '⛔ Remove duplicate receipts (marked DUPLICATE) before submitting.'
                 : !allTxnsMatched
                 ? `⛔ ${unmatchedTxns.length} selected transaction${unmatchedTxns.length !== 1 ? 's' : ''} still need${unmatchedTxns.length === 1 ? 's' : ''} a matched receipt — upload receipts for them before submitting.`
                 : warnings.filter(w => w.code !== 'RECEIPT_PROCESSING_FAILED').length > 0
